@@ -4,6 +4,7 @@
 //! [`CoreHandle`]（命令入口）与事件流（[`CoreEvent`]）与上层通信。
 
 pub mod capture;
+pub mod certs;
 pub mod encode;
 pub mod input;
 pub mod protocol;
