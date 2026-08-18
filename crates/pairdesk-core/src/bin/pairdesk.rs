@@ -8,7 +8,6 @@
 //! `connect` 收满 N 帧后自动退出；`serve` 运行至 Ctrl+C。
 
 use std::collections::HashMap;
-use std::io::Write;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -87,12 +86,26 @@ fn run_host(args: &[String]) -> anyhow::Result<()> {
     let password = a.get("password").cloned().unwrap_or_else(|| "123456".into());
     let fps: u32 = a.get("fps").and_then(|v| v.parse().ok()).unwrap_or(20);
     let jpeg: u8 = a.get("jpeg").and_then(|v| v.parse().ok()).unwrap_or(75);
+    // 中继模式：提供 --relay <地址> 与 --sid <会话码> 时走中继，否则直连
+    let relay_opt = a
+        .get("relay")
+        .map(|s| s.parse::<std::net::SocketAddr>().map_err(|e| anyhow::anyhow!(e)));
+    let sid_opt = a.get("sid").cloned();
 
-    println!("[被控端] 监听 0.0.0.0:{} 密码:{} 品质:jpeg={} fps={}", port, password, jpeg, fps);
+    if let (Some(Ok(relay)), Some(sid)) = (relay_opt, sid_opt) {
+        println!("[被控端] 经中继 {} 会话 {} 密码:{} 品质:jpeg={} fps={}", relay, sid, password, jpeg, fps);
+        let (handle, rx) = CoreHandle::start_host_via_relay(relay, sid, password)?;
+        handle.set_quality(Quality { jpeg, fps });
+        return event_pump(&rx);
+    }
+    println!("[被控端] 直连监听 0.0.0.0:{} 密码:{} 品质:jpeg={} fps={}", port, password, jpeg, fps);
     let (handle, rx) = CoreHandle::start_host(port, password)?;
     handle.set_quality(Quality { jpeg, fps });
+    event_pump(&rx)
+}
 
-    // 事件泵:打印关键事件
+/// 事件泵：打印关键事件直到通道断开。
+fn event_pump(rx: &std::sync::mpsc::Receiver<CoreEvent>) -> anyhow::Result<()> {
     loop {
         match rx.recv_timeout(Duration::from_millis(500)) {
             Ok(ev) => match ev {
@@ -125,10 +138,31 @@ fn run_viewer(args: &[String]) -> anyhow::Result<()> {
     let frames: u32 = a.get("frames").and_then(|v| v.parse().ok()).unwrap_or(10);
     let dump_dir = a.get("dump-dir").map(PathBuf::from);
     let test_input = a.get("test-input").cloned();
+    // 中继模式：提供 --relay 与 --sid 时经中继，否则直连 addr
+    let relay_opt = a.get("relay").map(|s| {
+        s.parse::<std::net::SocketAddr>()
+            .map_err(|e| anyhow::anyhow!(e))
+    });
+    let sid_opt = a.get("sid").cloned();
 
-    println!("[控制端] 连接 {} 密码:{} 收 {} 帧", addr, password, frames);
+    if let (Some(Ok(relay)), Some(sid)) = (relay_opt, sid_opt) {
+        println!("[控制端] 经中继 {} 会话 {} 密码:{} 收 {} 帧", relay, sid, password, frames);
+        let (handle, rx) = CoreHandle::connect_via_relay(relay, sid, password)?;
+        return run_viewer_loop(&handle, &rx, frames, dump_dir, test_input);
+    }
+    println!("[控制端] 直连 {} 密码:{} 收 {} 帧", addr, password, frames);
     let (handle, rx) = CoreHandle::connect(addr, password)?;
+    run_viewer_loop(&handle, &rx, frames, dump_dir, test_input)
+}
 
+/// 控制端会话主循环：收帧/验证输入/错误处理（直连与中继共用）。
+fn run_viewer_loop(
+    handle: &CoreHandle,
+    rx: &std::sync::mpsc::Receiver<CoreEvent>,
+    frames: u32,
+    dump_dir: Option<PathBuf>,
+    test_input: Option<String>,
+) -> anyhow::Result<()> {
     let mut got = 0u32;
     let mut authed = false;
     loop {

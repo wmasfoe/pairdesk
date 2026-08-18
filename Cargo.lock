@@ -192,6 +192,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "pairdesk-relay"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+]
+
+[[package]]
 name = "poly1305"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
