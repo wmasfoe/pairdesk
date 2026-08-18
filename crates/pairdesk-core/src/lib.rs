@@ -32,6 +32,8 @@ pub enum CoreEvent {
     Stats { fps: u32, kbps: u32, ping_ms: u32 },
     /// 错误（网络/采集等）
     Error(String),
+    /// 经中继信令得到的对端打洞端点（控制端用于尝试 QUIC 直连）
+    SignalHole(std::net::SocketAddr),
 }
 
 /// 上层对核心层的控制命令。
@@ -92,13 +94,14 @@ impl CoreHandle {
         session::spawn_viewer(addr, password)
     }
 
-    /// 启动"被控端"（经中继）：向 relay 登记 sid，等待 viewer 经同一中继加入。
+    /// 启动"被控端"（经中继）：向 relay 登记 sid(+打洞端口)，等待 viewer 经同一中继加入。
     pub fn start_host_via_relay(
         relay: SocketAddr,
         sid: String,
+        hole_port: u16,
         password: String,
     ) -> anyhow::Result<(CoreHandle, Receiver<CoreEvent>)> {
-        session::spawn_host_via_relay(relay, sid, password)
+        session::spawn_host_via_relay(relay, sid, hole_port, password)
     }
 
     /// 启动"控制端"（经中继）：经 relay 匹配同 sid 的 host。
