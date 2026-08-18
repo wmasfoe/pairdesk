@@ -1,0 +1,20 @@
+{
+  "name": "pairdesk",
+  "private": true,
+  "description": "两人局域网 P2P 远程协助 — 前端 workspace 根",
+  "packageManager": "pnpm@11.6.0",
+  "scripts": {
+    "dev": "pnpm --filter app dev",
+    "build": "pnpm --filter app build",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1",
+    "typescript": "^5.5.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}
