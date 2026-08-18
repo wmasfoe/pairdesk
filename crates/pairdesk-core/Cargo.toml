@@ -11,7 +11,7 @@ sha2 = "0.10"
 rand = "0.8"
 jpeg-encoder = "0.6"
 # 网络异步运行时 + QUIC（打洞异网直连的传输基座）
-tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros", "io-util"] }
 quinn = { version = "0.11", features = ["rustls-ring"] }
 rcgen = "0.13"
 rustls = { version = "0.23", features = ["ring"] }
