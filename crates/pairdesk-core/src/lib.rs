@@ -8,6 +8,7 @@ pub mod certs;
 pub mod encode;
 pub mod input;
 pub mod protocol;
+pub mod quic_frame;
 pub mod relay;
 pub mod session;
 pub mod transport;
