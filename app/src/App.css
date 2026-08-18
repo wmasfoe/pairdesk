@@ -1,0 +1,64 @@
+/* ============================================================
+   app 页面级样式（业务布局）。
+   ui-kit 的 pd- 类管控件基础样式；这里管页面排版。
+   ============================================================ */
+
+/* 通用页面容器 */
+.pd-page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.pd-page__head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.pd-page__title { font-size: 1.125rem; margin: 0; flex: 1; }
+
+/* 首页模式选择 */
+.pd-home { text-align: center; padding: 3rem 1rem; }
+.pd-home__title { font-size: 1.75rem; margin-bottom: 0.25rem; }
+.pd-home__sub { color: var(--pd-fg-muted); margin-bottom: 2rem; }
+.pd-home__modes { display: flex; gap: 1.5rem; justify-content: center; flex-wrap: wrap; }
+.pd-modecard {
+  width: 220px; padding: 1.5rem 1rem;
+  border: 1px solid var(--pd-border);
+  border-radius: 0.75rem;
+  background: var(--pd-bg-elev);
+  cursor: pointer;
+  display: flex; flex-direction: column; gap: 0.5rem; align-items: center;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.pd-modecard:hover { transform: translateY(-2px); box-shadow: var(--pd-card-shadow, 0 4px 16px rgba(0,0,0,0.08)); }
+.pd-modecard__icon { font-size: 2rem; }
+.pd-modecard__title { font-size: 1.125rem; font-weight: 600; }
+.pd-modecard__desc { font-size: 0.8125rem; color: var(--pd-fg-muted); }
+
+/* 表单布局 */
+.pd-host-form, .pd-viewer-form {
+  max-width: 360px; display: flex; flex-direction: column; gap: 1rem;
+}
+.pd-viewer-form { max-width: 360px; }
+.pd-password { display: flex; align-items: flex-end; gap: 0.5rem; }
+.pd-password .pd-field { flex: 1; }
+.pd-bigpwd {
+  font-size: 2.5rem; letter-spacing: 0.25rem; font-weight: 700;
+  color: var(--pd-primary); margin: 0.5rem 0;
+}
+.pd-hint { font-size: 0.8125rem; color: var(--pd-fg-muted); }
+.pd-error { color: var(--pd-status-error); font-size: 0.875rem; }
+
+/* 控制端活动区 */
+.pd-viewer-active { display: flex; flex-direction: column; gap: 0.75rem; }
+.pd-toolbar {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--pd-bg-elev);
+  border: 1px solid var(--pd-border); border-radius: 0.5rem;
+}
+.pd-toolbar__addr { flex: 1; font-size: 0.875rem; color: var(--pd-fg-muted); }
+.pd-video { border-radius: 0.5rem; border: 1px solid var(--pd-border); min-height: 320px; }

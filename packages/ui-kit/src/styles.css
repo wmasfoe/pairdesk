@@ -1,0 +1,113 @@
+/* ==========================================================================
+   ui-kit 全局样式与设计变量
+   ==========================================================================
+   结构：1) 颜色 CSS 变量（亮/暗两套）  2) 通用 reset  3) 组件类样式
+   命名规范：控件类统一 pd- 前缀 + BEM（pd-btn--primary 等）。
+   尺寸一律 rem 固定，控件高度不随系统字号膨胀。
+   ========================================================================== */
+
+/* ---------- 1. 设计变量 ---------- */
+.pd-light,
+.pd-dark {
+  /* 基础色板 */
+  --pd-bg: #ffffff;
+  --pd-bg-elev: #f8fafc; /* 卡片/输入底 */
+  --pd-fg: #1f2937;
+  --pd-fg-muted: #6b7280;
+  --pd-border: #e5e7eb;
+  --pd-primary: #3b82f6;
+  --pd-primary-hover: #2563eb;
+  --pd-danger: #ef4444;
+  --pd-danger-hover: #dc2626;
+  /* 状态色 */
+  --pd-status-idle: #9aa0a6;
+  --pd-status-connecting: #f59e0b;
+  --pd-status-online: #22c55e;
+  --pd-status-error: #ef4444;
+}
+
+.pd-dark {
+  --pd-bg: #111827;
+  --pd-bg-elev: #1f2937;
+  --pd-fg: #f9fafb;
+  --pd-fg-muted: #9ca3af;
+  --pd-border: #374151;
+}
+
+/* ---------- 2. 轻 reset ---------- */
+.pd-app,
+.pd-app * { box-sizing: border-box; }
+
+/* ---------- 3. 组件类 ---------- */
+
+/* 按钮 */
+.pd-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  height: 2.25rem;
+  padding: 0 1rem;
+  border: 1px solid transparent;
+  border-radius: 0.375rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--pd-fg);
+  background: var(--pd-bg-elev);
+  transition: background 0.15s, opacity 0.15s;
+  user-select: none;
+}
+.pd-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.pd-btn--primary { background: var(--pd-primary); color: #fff; }
+.pd-btn--primary:not(:disabled):hover { background: var(--pd-primary-hover); }
+.pd-btn--danger { background: var(--pd-danger); color: #fff; }
+.pd-btn--danger:not(:disabled):hover { background: var(--pd-danger-hover); }
+.pd-btn--ghost { background: transparent; border-color: var(--pd-border); }
+.pd-btn--ghost:not(:disabled):hover { background: var(--pd-bg-elev); }
+
+/* 输入框 */
+.pd-field { display: flex; flex-direction: column; gap: 0.375rem; }
+.pd-field__label { font-size: 0.8125rem; color: var(--pd-fg-muted); }
+.pd-field__input {
+  height: 2.25rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--pd-border);
+  border-radius: 0.5rem;
+  font-size: 0.9375rem;
+  color: var(--pd-fg);
+  background: var(--pd-bg-elev);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.pd-field__input:focus { border-color: var(--pd-primary); }
+.pd-field__error { font-size: 0.8125rem; color: var(--pd-status-error); }
+
+/* 状态点 */
+.pd-status { display: inline-flex; align-items: center; gap: 0.375rem; font-size: 0.8125rem; color: var(--pd-fg-muted); }
+.pd-status__dot { width: 0.625rem; height: 0.625rem; border-radius: 50%; flex-shrink: 0; }
+
+/* 卡片 */
+.pd-card {
+  background: var(--pd-bg-elev);
+  border: 1px solid var(--pd-border);
+  border-radius: 0.75rem;
+  padding: 1rem;
+}
+
+/* Toast */
+.pd-toast {
+  padding: 0.625rem 0.875rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--pd-fg);
+  background: var(--pd-bg-elev);
+  border: 1px solid var(--pd-border);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+}
+
+/* 状态点脉冲动画（连接中提示） */
+@keyframes pd-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
