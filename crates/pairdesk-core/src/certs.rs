@@ -45,6 +45,8 @@ pub fn ensure_identity(dir: &Path) -> Result<P2pIdentity> {
 
 /// 由身份私钥构建 QUIC 服务端配置（被控端）。
 pub fn server_quic_config(id: &P2pIdentity) -> Result<quinn::ServerConfig> {
+    // 幂等：确保 rustls 加密提供者已就绪（任一配置入口都能自动装上）
+    let _ = rustls::crypto::ring::default_provider().install_default();
     if id.cert_der.is_empty() || id.key_der.is_empty() {
         bail!("身份证书为空");
     }
@@ -63,6 +65,8 @@ pub fn server_quic_config(id: &P2pIdentity) -> Result<quinn::ServerConfig> {
 
 /// 由身份公钥构建 QUIC 客户端配置（控制端信任对端公钥）。
 pub fn client_quic_config(id: &P2pIdentity) -> Result<quinn::ClientConfig> {
+    // 幂等：确保 rustls 加密提供者已就绪
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let cert = rustls::pki_types::CertificateDer::from(id.cert_der.clone());
     let mut roots = rustls::RootCertStore::empty();
     roots.add(cert)?;
