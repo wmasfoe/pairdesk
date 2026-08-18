@@ -35,6 +35,8 @@ pub enum CoreEvent {
     Error(String),
     /// 经中继信令得到的对端打洞端点（控制端用于尝试 QUIC 直连）
     SignalHole(std::net::SocketAddr),
+    /// 自动择一后选中的传输路径（如 "QUIC 打洞直连"/"中继兜底"）
+    Transport(std::string::String),
 }
 
 /// 上层对核心层的控制命令。
@@ -128,6 +130,25 @@ impl CoreHandle {
         password: String,
     ) -> anyhow::Result<(CoreHandle, Receiver<CoreEvent>)> {
         session::spawn_viewer_via_quic(hole, password)
+    }
+
+    /// 启动"被控端"（自动就绪）：同时起 QUIC 打洞 + 中继两路，任一被连即会话。
+    pub fn start_host_auto(
+        relay: SocketAddr,
+        sid: String,
+        hole_port: u16,
+        password: String,
+    ) -> anyhow::Result<(CoreHandle, Receiver<CoreEvent>)> {
+        session::spawn_host_auto(relay, sid, hole_port, password)
+    }
+
+    /// 启动"控制端"（自动择一）：先试 QUIC 打洞直连，失败自动降级中继。
+    pub fn connect_auto(
+        relay: SocketAddr,
+        sid: String,
+        password: String,
+    ) -> anyhow::Result<(CoreHandle, Receiver<CoreEvent>)> {
+        session::spawn_viewer_auto(relay, sid, password)
     }
 
     /// 调节画质/帧率。
