@@ -21,7 +21,7 @@ export function VideoView({ aspect }: VideoViewProps) {
   useEffect(() => {
     // 订阅画面帧；返回取消订阅函数（组件卸载时自动移除）
     return getCoreBridge().onEvent((e) => {
-      if (e.type !== 'screen-frame') return;
+      if (e.type !== 'frame') return;
       // 拷贝为 ArrayBuffer 底板（规避 TS 5.7+ Uint8Array<ArrayBufferLike> 泛型歧义）
       const bytes = new Uint8Array(e.jpeg);
       const blob = new Blob([bytes], { type: 'image/jpeg' });
