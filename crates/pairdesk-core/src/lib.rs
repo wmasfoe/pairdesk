@@ -7,6 +7,7 @@ pub mod capture;
 pub mod encode;
 pub mod input;
 pub mod protocol;
+pub mod relay;
 pub mod session;
 pub mod transport;
 
@@ -88,6 +89,24 @@ impl CoreHandle {
     /// 返回 (句柄, 事件接收器)。
     pub fn connect(addr: SocketAddr, password: String) -> anyhow::Result<(CoreHandle, Receiver<CoreEvent>)> {
         session::spawn_viewer(addr, password)
+    }
+
+    /// 启动"被控端"（经中继）：向 relay 登记 sid，等待 viewer 经同一中继加入。
+    pub fn start_host_via_relay(
+        relay: SocketAddr,
+        sid: String,
+        password: String,
+    ) -> anyhow::Result<(CoreHandle, Receiver<CoreEvent>)> {
+        session::spawn_host_via_relay(relay, sid, password)
+    }
+
+    /// 启动"控制端"（经中继）：经 relay 匹配同 sid 的 host。
+    pub fn connect_via_relay(
+        relay: SocketAddr,
+        sid: String,
+        password: String,
+    ) -> anyhow::Result<(CoreHandle, Receiver<CoreEvent>)> {
+        session::spawn_viewer_via_relay(relay, sid, password)
     }
 
     /// 调节画质/帧率。

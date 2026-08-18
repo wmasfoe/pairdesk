@@ -17,9 +17,10 @@ use anyhow::{Result, bail};
 
 use crate::capture::{PlatformCapturer, ScreenCapturer};
 use crate::encode::encode_jpeg;
-use crate::input::{PlatformInjector, InputInjector};
+use crate::input::{InputInjector, PlatformInjector};
 use crate::protocol::*;
-use crate::transport::{Connection, accept_once, connect};
+use crate::relay;
+use crate::transport::{accept_once, connect, Connection};
 use crate::{ControlCommand, CoreEvent, Quality};
 
 /// 读超时：超过心跳间隔即可（越大越省电，越小断线越快）
@@ -61,6 +62,57 @@ pub fn spawn_viewer(
         .spawn(move || {
             if let Err(e) = viewer_session(addr, &password, &event_tx, &cmd_rx) {
                 let _ = event_tx.send(CoreEvent::Error(format!("控制端错误: {}", e)));
+            }
+        })?;
+    Ok((h, event_rx))
+}
+
+// ---------- 中继模式（经 pairdesk-relay 建立连接） ----------
+
+/// 被控端经中继登记：连 relay → 注册 sid → 等 viewer，随后走单会话。
+pub fn spawn_host_via_relay(
+    relay: SocketAddr,
+    sid: String,
+    password: String,
+) -> Result<(crate::CoreHandle, Receiver<CoreEvent>)> {
+    let (event_tx, event_rx) = channel();
+    let (cmd_tx, cmd_rx) = channel();
+    let cmd_rx = Arc::new(Mutex::new(cmd_rx));
+    let h = crate::CoreHandle::from_tx(cmd_tx);
+    thread::Builder::new()
+        .name("pairdesk-host-relay".into())
+        .spawn(move || {
+            let result = (|| -> Result<()> {
+                let conn = relay::register_host(relay, &sid)?;
+                let _ = host_session_once(conn, &password, &event_tx, &cmd_rx);
+                Ok(())
+            })();
+            if let Err(e) = result {
+                let _ = event_tx.send(CoreEvent::Error(format!("中继被控端: {}", e)));
+            }
+        })?;
+    Ok((h, event_rx))
+}
+
+/// 控制端经中继匹配：连 relay → 按 sid 匹配 host → 走握手。
+pub fn spawn_viewer_via_relay(
+    relay: SocketAddr,
+    sid: String,
+    password: String,
+) -> Result<(crate::CoreHandle, Receiver<CoreEvent>)> {
+    let (event_tx, event_rx) = channel();
+    let (cmd_tx, cmd_rx) = channel();
+    let cmd_rx = Arc::new(Mutex::new(cmd_rx));
+    let h = crate::CoreHandle::from_tx(cmd_tx);
+    thread::Builder::new()
+        .name("pairdesk-viewer-relay".into())
+        .spawn(move || {
+            let result = (|| -> Result<()> {
+                let conn = relay::connect_viewer(relay, &sid)?;
+                viewer_session_with_conn(conn, &password, &event_tx, &cmd_rx)
+            })();
+            if let Err(e) = result {
+                let _ = event_tx.send(CoreEvent::Error(format!("中继控制端: {}", e)));
             }
         })?;
     Ok((h, event_rx))
@@ -180,7 +232,6 @@ fn host_session_once(
     let c_running = running.clone();
     let c_quality = quality.clone();
     let mut c_conn = conn.try_clone()?;
-    let c_cipher = cipher.clone();
     let c_tx = tx.clone();
     let c_rx = rx.clone();
     thread::Builder::new()
@@ -240,7 +291,7 @@ fn host_session_once(
         seq = seq.wrapping_add(1);
         let payload = FrameMsg { seq, jpeg }.encode();
         let sealed = cipher.lock().unwrap().seal(&payload)?;
-        if let Err(e) = send_conn.send_frame(FrameType::Frame, &sealed) {
+        if let Err(_e) = send_conn.send_frame(FrameType::Frame, &sealed) {
             if running.load(Ordering::SeqCst) {
                 let _ = tx.send(CoreEvent::PeerDisconnected);
             }
@@ -271,7 +322,17 @@ fn viewer_session(
     tx: &Sender<CoreEvent>,
     rx: &Arc<Mutex<Receiver<ControlCommand>>>,
 ) -> Result<()> {
-    let mut conn = connect(addr)?;
+    let conn = connect(addr)?;
+    viewer_session_with_conn(conn, password, tx, rx)
+}
+
+/// 在已建立的连接上执行控制端握手 + 事件循环（直连与中继复用同一套逻辑）。
+fn viewer_session_with_conn(
+    mut conn: Connection,
+    password: &str,
+    tx: &Sender<CoreEvent>,
+    rx: &Arc<Mutex<Receiver<ControlCommand>>>,
+) -> Result<()> {
     conn.set_read_timeout(READ_TIMEOUT)?;
 
     // ---- 握手 ----

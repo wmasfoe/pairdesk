@@ -1,0 +1,13 @@
+[package]
+name = "pairdesk-relay"
+version = "0.1.0"
+edition = "2021"
+description = "PairDesk 中继服务器：信令牵线 + 透明桥接转发（独立部署于 VPS，不进客户端安装包）"
+
+[dependencies]
+anyhow = "1"
+
+[profile.release]
+# 服务器以单一长驻进程运行，追求吞吐与轻量
+lto = true
+opt-level = 3
