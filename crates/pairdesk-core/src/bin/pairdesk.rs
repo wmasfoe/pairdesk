@@ -94,6 +94,15 @@ fn run_host(args: &[String]) -> anyhow::Result<()> {
     // 打洞 QUIC 端口（被控端用它接收异网直连；可选，默认 8889）
     let hole_port: u16 = a.get("hole-port").and_then(|v| v.parse().ok()).unwrap_or(8889);
 
+    // 自动就绪模式：serve --relay --sid --auto（同起 QUIC 打洞 + 中继兜底）
+    if a.contains_key("auto") {
+        if let (Some(Ok(relay)), Some(sid)) = (&relay_opt, &sid_opt) {
+            println!("[被控端] 自动就绪(QUIC打洞+中继) relay {} sid {} hole {} 密码:{} 品质:jpeg={} fps={}", relay, sid, hole_port, password, jpeg, fps);
+            let (handle, rx) = CoreHandle::start_host_auto(*relay, sid.clone(), hole_port, password)?;
+            handle.set_quality(Quality { jpeg, fps });
+            return event_pump(&rx);
+        }
+    }
     if let (Some(Ok(relay)), Some(sid)) = (relay_opt, sid_opt) {
         println!("[被控端] 经中继 {} 会话 {} 打洞端口 {} 密码:{} 品质:jpeg={} fps={}", relay, sid, hole_port, password, jpeg, fps);
         let (handle, rx) = CoreHandle::start_host_via_relay(relay, sid, hole_port, password)?;
@@ -127,6 +136,7 @@ fn event_pump(rx: &std::sync::mpsc::Receiver<CoreEvent>) -> anyhow::Result<()> {
                     }
                 }
                 CoreEvent::Error(e) => println!("[被控端] ❌ {}", e),
+                CoreEvent::Transport(t) => println!("[被控端] 传输路径: {}", t),
                 _ => {}
             },
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
@@ -147,6 +157,20 @@ fn run_viewer(args: &[String]) -> anyhow::Result<()> {
     let frames: u32 = a.get("frames").and_then(|v| v.parse().ok()).unwrap_or(10);
     let dump_dir = a.get("dump-dir").map(PathBuf::from);
     let test_input = a.get("test-input").cloned();
+    // 中继相关参数（auto/quic 模式都可用）
+    let relay_opt = a.get("relay").map(|s| {
+        s.parse::<std::net::SocketAddr>()
+            .map_err(|e| anyhow::anyhow!(e))
+    });
+    let sid_opt = a.get("sid").cloned();
+    // 自动择一模式：connect --relay --sid --auto（先 QUIC 打洞，失败自动中继兜底）
+    if a.contains_key("auto") {
+        if let (Some(Ok(relay)), Some(sid)) = (&relay_opt, &sid_opt) {
+            println!("[控制端] 自动择一(QUIC打洞→中继) relay {} sid {} 密码:{} 收 {} 帧", relay, sid, password, frames);
+            let (handle, rx) = CoreHandle::connect_auto(*relay, sid.clone(), password)?;
+            return run_viewer_loop(&handle, &rx, frames, dump_dir, test_input);
+        }
+    }
     // QUIC 打洞直连模式：connect --quic <hole-addr>（pos 给占位即可）
     if let Some(hole_str) = a.get("quic").cloned() {
         let hole: SocketAddr = hole_str.parse()?;
@@ -154,13 +178,7 @@ fn run_viewer(args: &[String]) -> anyhow::Result<()> {
         let (handle, rx) = CoreHandle::connect_via_quic(hole, password)?;
         return run_viewer_loop(&handle, &rx, frames, dump_dir, test_input);
     }
-    // 中继模式：提供 --relay 与 --sid 时经中继，否则直连 addr
-    let relay_opt = a.get("relay").map(|s| {
-        s.parse::<std::net::SocketAddr>()
-            .map_err(|e| anyhow::anyhow!(e))
-    });
-    let sid_opt = a.get("sid").cloned();
-
+    // 中继模式：提供 --relay 与 --sid 时经中继
     if let (Some(Ok(relay)), Some(sid)) = (relay_opt, sid_opt) {
         println!("[控制端] 经中继 {} 会话 {} 密码:{} 收 {} 帧", relay, sid, password, frames);
         let (handle, rx) = CoreHandle::connect_via_relay(relay, sid, password)?;
@@ -228,6 +246,7 @@ fn run_viewer_loop(
                     break;
                 }
                 CoreEvent::Error(e) => println!("[控制端] ❌ {}", e),
+                CoreEvent::Transport(t) => println!("[控制端] 传输路径: {}", t),
                 _ => {}
             },
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,

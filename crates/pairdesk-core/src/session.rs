@@ -203,6 +203,108 @@ fn identity_dir() -> std::path::PathBuf {
         .unwrap_or_else(|_| "/tmp/pd-quic".into())
 }
 
+// ---------- 自动择一（用户只给 relay+sid+密码，系统无感择优） ----------
+
+/// 被控端自动就绪：同时起 QUIC 打洞 server + 中继注册，任一被连即成为会话。
+/// 返回主句柄(命令广播到各路子会话)与聚合事件流。
+pub fn spawn_host_auto(
+    relay: SocketAddr,
+    sid: String,
+    hole_port: u16,
+    password: String,
+) -> Result<(crate::CoreHandle, Receiver<CoreEvent>)> {
+    let (event_tx, event_rx) = channel();
+    let (cmd_tx, cmd_rx) = channel();
+    let cmd_rx = Arc::new(Mutex::new(cmd_rx));
+    let h = crate::CoreHandle::from_tx(cmd_tx);
+
+    // 两路子会话各自就绪（QUIC 打洞 + 中继兜底）
+    let (qh, qrx) = spawn_host_via_quic(hole_port, password.clone())?;
+    let (rh, rrx) = spawn_host_via_relay(relay, sid, hole_port, password)?;
+
+    // 子事件 → 主事件聚合
+    let e1 = event_tx.clone();
+    thread::Builder::new().name("host-auto-fwd-q".into()).spawn(move || {
+        for e in qrx {
+            if e1.send(e).is_err() {
+                break;
+            }
+        }
+    })?;
+    thread::Builder::new().name("host-auto-fwd-r".into()).spawn(move || {
+        for e in rrx {
+            if event_tx.send(e).is_err() {
+                break;
+            }
+        }
+    })?;
+    // 主命令 → 广播到两路
+    let cmd_rx = Arc::clone(&cmd_rx);
+    thread::Builder::new().name("host-auto-cmd".into()).spawn(move || loop {
+        let c = match cmd_rx.lock().unwrap().recv() {
+            Ok(c) => c,
+            Err(_) => break,
+        };
+        let _ = qh.tx().send(c.clone());
+        let _ = rh.tx().send(c);
+    })?;
+
+    Ok((h, event_rx))
+}
+
+/// 控制端自动择一：经 relay 信令拿打洞端点 → 先试 QUIC 打洞直连，
+/// 失败自动降级到中继兜底（对用户无感）。
+pub fn spawn_viewer_auto(
+    relay: SocketAddr,
+    sid: String,
+    password: String,
+) -> Result<(crate::CoreHandle, Receiver<CoreEvent>)> {
+    let (event_tx, event_rx) = channel();
+    let (cmd_tx, cmd_rx) = channel();
+    let cmd_rx = Arc::new(Mutex::new(cmd_rx));
+    let h = crate::CoreHandle::from_tx(cmd_tx);
+    thread::Builder::new()
+        .name("pairdesk-viewer-auto".into())
+        .spawn(move || {
+            let result = (|| -> Result<()> {
+                let (relay_conn, hole) = relay::connect_viewer(relay, &sid)?;
+                // ① 先试 QUIC 打洞直连
+                match try_quic_connect(hole) {
+                    Ok(fs) => {
+                        let _ = event_tx.send(CoreEvent::Transport("QUIC 打洞直连".into()));
+                        viewer_session_with_conn(fs, &password, &event_tx, &cmd_rx)
+                    }
+                    Err(e) => {
+                        let _ = event_tx.send(CoreEvent::Transport(format!("中继兜底 ({})", e)));
+                        viewer_session_with_conn(relay_conn, &password, &event_tx, &cmd_rx)
+                    }
+                }
+            })();
+            if let Err(e) = result {
+                let _ = event_tx.send(CoreEvent::Error(format!("自动择一控制端: {}", e)));
+            }
+        })?;
+    Ok((h, event_rx))
+}
+
+/// 尝试以 QUIC 直连到打洞端点（带超时），成功返回同步帧流。
+fn try_quic_connect(hole: SocketAddr) -> Result<crate::quic_frame::QuicFrameStream> {
+    let id = crate::certs::ensure_identity(&identity_dir())?;
+    let cfg = crate::certs::client_quic_config(&id)?;
+    let rt = Arc::new(tokio::runtime::Runtime::new()?);
+    let res = rt.block_on(async {
+        tokio::time::timeout(Duration::from_secs(4), async {
+            let mut ep = quinn::Endpoint::client("0.0.0.0:0".parse()?)?;
+            ep.set_default_client_config(cfg);
+            let conn = ep.connect(hole, "pairdesk.local")?.await?;
+            conn.open_bi().await.map_err(anyhow::Error::from)
+        })
+        .await
+    });
+    let (send, recv) = res.map_err(|_| anyhow::anyhow!("QUIC 打洞超时"))??;
+    Ok(crate::quic_frame::QuicFrameStream::new(rt, send, recv))
+}
+
 // ---------- 被控端 ----------
 
 fn host_session(
