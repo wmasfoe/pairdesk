@@ -69,10 +69,11 @@ pub fn spawn_viewer(
 
 // ---------- 中继模式（经 pairdesk-relay 建立连接） ----------
 
-/// 被控端经中继登记：连 relay → 注册 sid → 等 viewer，随后走单会话。
+/// 被控端经中继登记：连 relay → 注册 sid(+打洞端口) → 等 viewer，随后走单会话。
 pub fn spawn_host_via_relay(
     relay: SocketAddr,
     sid: String,
+    hole_port: u16,
     password: String,
 ) -> Result<(crate::CoreHandle, Receiver<CoreEvent>)> {
     let (event_tx, event_rx) = channel();
@@ -83,7 +84,7 @@ pub fn spawn_host_via_relay(
         .name("pairdesk-host-relay".into())
         .spawn(move || {
             let result = (|| -> Result<()> {
-                let conn = relay::register_host(relay, &sid)?;
+                let conn = relay::register_host(relay, &sid, hole_port)?;
                 let _ = host_session_once(conn, &password, &event_tx, &cmd_rx);
                 Ok(())
             })();
@@ -94,7 +95,7 @@ pub fn spawn_host_via_relay(
     Ok((h, event_rx))
 }
 
-/// 控制端经中继匹配：连 relay → 按 sid 匹配 host → 走握手。
+/// 控制端经中继匹配：连 relay → 按 sid 匹配 host → 拿打洞端点 → 走握手。
 pub fn spawn_viewer_via_relay(
     relay: SocketAddr,
     sid: String,
@@ -108,7 +109,8 @@ pub fn spawn_viewer_via_relay(
         .name("pairdesk-viewer-relay".into())
         .spawn(move || {
             let result = (|| -> Result<()> {
-                let conn = relay::connect_viewer(relay, &sid)?;
+                let (conn, hole) = relay::connect_viewer(relay, &sid)?;
+                let _ = event_tx.send(CoreEvent::SignalHole(hole)); // 上报打洞端点(供后续 QUIC 直连)
                 viewer_session_with_conn(conn, &password, &event_tx, &cmd_rx)
             })();
             if let Err(e) = result {

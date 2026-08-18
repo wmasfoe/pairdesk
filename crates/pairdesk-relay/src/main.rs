@@ -30,8 +30,8 @@ use anyhow::{Context, Result, bail};
 const DEFAULT_PORT: u16 = 8989;
 const MAX_SID: usize = 64;
 
-/// 等待中的 host 连接池：sid → TcpStream（尚未被 viewer 匹配）。
-type HostPool = Arc<Mutex<HashMap<String, TcpStream>>>;
+/// 等待中的 host 连接池：sid → (TcpStream, host 公网IP, 打洞UDP端口)。
+type HostPool = Arc<Mutex<HashMap<String, (TcpStream, std::net::IpAddr, u16)>>>;
 
 fn main() -> Result<()> {
     let port: u16 = std::env::args()
@@ -69,6 +69,7 @@ fn handle_client(mut stream: TcpStream, pool: &HostPool) -> Result<()> {
     stream.read_exact(&mut head)?;
     let role = head[0];
 
+    // 读 sid
     let mut lenb = [0u8; 1];
     stream.read_exact(&mut lenb)?;
     let sid_len = lenb[0] as usize;
@@ -80,27 +81,49 @@ fn handle_client(mut stream: TcpStream, pool: &HostPool) -> Result<()> {
     let sid = String::from_utf8_lossy(&sid).to_string();
 
     match role {
-        // Host 注册：克隆一份进池，原 stream 留在本线程阻塞等待
+        // Host 注册（携带打洞 UDP 端口）：克隆一份进池，原 stream 留在本线程阻塞等待
         b'H' => {
+            // 注册 v2：角色(1) | sid_len(1) | sid | hole_port(2, 大端)
+            let mut portb = [0u8; 2];
+            stream.read_exact(&mut portb)?;
+            let hole_port = u16::from_be_bytes(portb);
+            let host_ip = stream.peer_addr()?.ip();
             let pool_copy = stream.try_clone().context("克隆 host 连接失败")?;
-            pool.lock().unwrap().insert(sid.clone(), pool_copy);
-            println!("[relay] host 注册 会话={} (等待 viewer)", sid);
+            pool.lock().unwrap().insert(sid.clone(), (pool_copy, host_ip, hole_port));
+            println!("[relay] host 注册 会话={} 打洞端点={}:{} (等待 viewer)", sid, host_ip, hole_port);
             // 保持原连接不 drop（drop 会关闭 socket），线程常驻等待
             loop {
                 thread::sleep(std::time::Duration::from_secs(60));
             }
         }
-        // Viewer 匹配，触发桥接
+        // Viewer 请求：把 host 打洞端点作为【信令】回给 viewer，然后触发桥接兜底
         b'V' => {
-            let host = match pool.lock().unwrap().remove(&sid) {
+            let (host, host_ip, hole_port) = match pool.lock().unwrap().remove(&sid) {
                 Some(h) => h,
                 None => {
                     let _ = stream.write_all(&[b'E']);
                     bail!("会话 {} 无等待中的 host", sid);
                 }
             };
-            println!("[relay] viewer 匹配 会话={} → 桥接", sid);
-            bridge(host, stream); // 所有权移入 bridge，常驻转发
+            // 信令 v2：S | family(1: 4/6) | ip_octets | hole_port(2, 大端)
+            let ip_octets = match host_ip {
+                std::net::IpAddr::V4(v4) => {
+                    let mut sig = vec![b'S', 4u8];
+                    sig.extend_from_slice(&v4.octets());
+                    sig.extend_from_slice(&hole_port.to_be_bytes());
+                    sig
+                }
+                std::net::IpAddr::V6(v6) => {
+                    let mut sig = vec![b'S', 6u8];
+                    sig.extend_from_slice(&v6.octets());
+                    sig.extend_from_slice(&hole_port.to_be_bytes());
+                    sig
+                }
+            };
+            let mut s = stream.try_clone().context("克隆 viewer 连接失败")?;
+            s.write_all(&ip_octets)?;
+            println!("[relay] viewer 匹配 会话={} → 信令打洞端点 {}/{} → 桥接", sid, host_ip, hole_port);
+            bridge(host, stream); // 所有权移入 bridge，常驻转发（中继兜底）
             Ok(())
         }
         other => bail!("未知角色: {}", other as u8),

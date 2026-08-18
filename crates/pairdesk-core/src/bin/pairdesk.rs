@@ -91,10 +91,12 @@ fn run_host(args: &[String]) -> anyhow::Result<()> {
         .get("relay")
         .map(|s| s.parse::<std::net::SocketAddr>().map_err(|e| anyhow::anyhow!(e)));
     let sid_opt = a.get("sid").cloned();
+    // 打洞 QUIC 端口（被控端用它接收异网直连；可选，默认 8889）
+    let hole_port: u16 = a.get("hole-port").and_then(|v| v.parse().ok()).unwrap_or(8889);
 
     if let (Some(Ok(relay)), Some(sid)) = (relay_opt, sid_opt) {
-        println!("[被控端] 经中继 {} 会话 {} 密码:{} 品质:jpeg={} fps={}", relay, sid, password, jpeg, fps);
-        let (handle, rx) = CoreHandle::start_host_via_relay(relay, sid, password)?;
+        println!("[被控端] 经中继 {} 会话 {} 打洞端口 {} 密码:{} 品质:jpeg={} fps={}", relay, sid, hole_port, password, jpeg, fps);
+        let (handle, rx) = CoreHandle::start_host_via_relay(relay, sid, hole_port, password)?;
         handle.set_quality(Quality { jpeg, fps });
         return event_pump(&rx);
     }
