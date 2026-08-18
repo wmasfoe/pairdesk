@@ -1,15 +1,15 @@
 /**
  * 被控端页：让别人连我。
  *
- * 展示连接信息（端口/密码），提供"开始接收协助"与"断开"操作。
- * 本地状态：端口、密码、是否启动。会话状态来自 useSession。
+ * 用户模型：本机生成【会话码 + 密码】，打开「允许远程控制」开关后开始接收协助。
+ * 中继地址用于打洞信令与兜底（生产为 VPS，可改）。
  */
 import { Button, StatusDot, TextField } from '@pairdesk/ui-kit';
 import { useState } from 'react';
+import { getCoreBridge } from '../bridge';
 import { useSession, type SessionPhase } from '../state/useSession';
 import type { StatusTone } from '@pairdesk/ui-kit';
 
-/** 会话阶段 → 状态点色调 */
 const TONE: Record<SessionPhase, StatusTone> = {
   idle: 'idle',
   authentication: 'connecting',
@@ -23,12 +23,24 @@ const TONE: Record<SessionPhase, StatusTone> = {
 function genPwd(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
+/** 生成会话码（如 pd-XXXX） */
+function genSid(): string {
+  return 'pd-' + Math.random().toString(36).slice(2, 6).toUpperCase() + Math.floor(100 + Math.random() * 900);
+}
 
 export function HostPage({ onBack }: { onBack: () => void }) {
   const session = useSession();
-  const [port, setPort] = useState('8888');
+  const [relay, setRelay] = useState('127.0.0.1:8977');
+  const [sid, setSid] = useState(() => genSid());
+  const [holePort, setHolePort] = useState('8889');
   const [password, setPassword] = useState(() => genPwd());
+  const [allowed, setAllowed] = useState(false);
   const active = session.phase === 'connected' || session.phase === 'authenticated';
+
+  const toggleAllowed = (v: boolean) => {
+    setAllowed(v);
+    void getCoreBridge().setAllowed(v);
+  };
 
   return (
     <div className="pd-page pd-page--host">
@@ -42,25 +54,24 @@ export function HostPage({ onBack }: { onBack: () => void }) {
 
       {!active ? (
         <div className="pd-host-form">
-          <TextField
-            label="监听端口"
-            value={port}
-            onChange={setPort}
-            placeholder="8888"
-            inputMode="numeric"
-          />
-          {/* 密码：每次启动可重新生成，展示为纯数字便于口口相传 */}
+          <div className="pd-field-row">
+            <TextField label="会话码（给对方看）" value={sid} onChange={setSid} />
+            <Button variant="ghost" onClick={() => setSid(genSid())}>换一个</Button>
+          </div>
+          <TextField label="中继/VPS 地址" value={relay} onChange={setRelay} placeholder="127.0.0.1:8977" />
+          <TextField label="打洞端口" value={holePort} onChange={setHolePort} inputMode="numeric" />
           <div className="pd-password">
             <TextField label="连接密码" value={password} onChange={setPassword} />
             <Button variant="ghost" onClick={() => setPassword(genPwd())}>换一个</Button>
           </div>
-          <p className="pd-hint">
-            把「本机 IP + 端口 + 密码」告诉对方即可。示例 IP：
-            <code>127.0.0.1:{port}</code>
-          </p>
+          <label className="pd-switch">
+            <input type="checkbox" checked={allowed} onChange={(e) => toggleAllowed(e.target.checked)} />
+            允许远程控制（关闭时即使有码也无法连接）
+          </label>
           <Button
             variant="primary"
-            onClick={() => session.startHost(Number(port) || 8888, password)}
+            disabled={!allowed || !sid || !password}
+            onClick={() => session.startHostAuto(relay, sid, Number(holePort) || 8889, password)}
           >
             开始接收协助
           </Button>
@@ -69,8 +80,8 @@ export function HostPage({ onBack }: { onBack: () => void }) {
       ) : (
         <div className="pd-host-active">
           <h2>正在等待连接</h2>
-          <p className="pd-bigpwd">{password}</p>
-          <p className="pd-hint">对方在你的设备列表或输入框里看到本机，输入此密码即可连接。</p>
+          <p className="pd-bigpwd">{sid}</p>
+          <p className="pd-hint">把「会话码 {sid}」和密码 {password} 告诉对方，对方输入后即可看到你的屏幕。</p>
           <Button variant="danger" onClick={session.disconnect}>断开连接</Button>
         </div>
       )}

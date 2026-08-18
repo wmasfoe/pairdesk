@@ -2,12 +2,18 @@
  * Tauri 原生桥接实现：把前端调用翻译为 Tauri 命令 + 事件。
  *
  * 对应后端 `crates/pairdesk-app/src/bridge.rs`：
- *  - invoke('pd_connect', {...}) → 后端调用 pairdesk-core::CoreHandle
+ *  - invoke('pd_start_host_auto' / 'pd_connect_auto' / 'pd_set_allowed' / ...)
  *  - 后端通过 listen('core://event') 把 CoreEvent 推给前端
  */
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { CoreBridge, CoreEvent, InputMsg } from './types';
+import type {
+  ConnectParams,
+  CoreBridge,
+  CoreEvent,
+  HostParams,
+  InputMsg,
+} from './types';
 
 /** 前端监听者集合（模块级：getCoreBridge 单实例，监听只注册一次） */
 const listeners = new Set<(e: CoreEvent) => void>();
@@ -16,11 +22,14 @@ export function createTauriBridge(): CoreBridge {
   let unlisten: UnlistenFn | null = null;
 
   return {
-    async startHost(port, password) {
-      await invoke('pd_start_host', { port, password });
+    async setAllowed(allowed) {
+      await invoke('pd_set_allowed', { allowed });
     },
-    async connect(addr, password) {
-      await invoke('pd_connect', { addr, password });
+    async startHostAuto({ relay, sid, holePort, password }: HostParams) {
+      await invoke('pd_start_host_auto', { relay, sid, holePort, password });
+    },
+    async connectAuto({ relay, sid, password }: ConnectParams) {
+      await invoke('pd_connect_auto', { relay, sid, password });
     },
     stop() {
       void invoke('pd_stop');
@@ -43,7 +52,7 @@ export function createTauriBridge(): CoreBridge {
   };
 }
 
-/** 把前端 InputMsg 序列化为后端可识别的扁平结构 */
+/** 把前端 InputMsg 序列化为后端可识别的扁平结构（kind 为 Rust 变体名） */
 function serializeInput(msg: InputMsg): object {
   switch (msg.kind) {
     case 'mouse-move':

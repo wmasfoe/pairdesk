@@ -1,7 +1,7 @@
 /**
  * 控制端页：我去连别人。
  *
- * 提供地址/密码输入 → 连接 → 显示远程画面 + 工具栏（断开）。
+ * 输入对方给的【会话码 + 密码】（中继地址可改），程序自动择一连接。
  */
 import { Button, StatusDot, TextField } from '@pairdesk/ui-kit';
 import { useState } from 'react';
@@ -20,7 +20,8 @@ const TONE: Record<SessionPhase, StatusTone> = {
 
 export function ViewerPage({ onBack }: { onBack: () => void }) {
   const session = useSession();
-  const [addr, setAddr] = useState('127.0.0.1:8888');
+  const [relay, setRelay] = useState('127.0.0.1:8977');
+  const [sid, setSid] = useState('');
   const [password, setPassword] = useState('');
   const connected = session.phase === 'connected' || session.phase === 'authenticated';
   const busy = session.phase === 'authentication';
@@ -37,17 +38,20 @@ export function ViewerPage({ onBack }: { onBack: () => void }) {
 
       {!connected ? (
         <div className="pd-viewer-form">
-          <TextField label="对方地址 (IP:端口)" value={addr} onChange={setAddr} placeholder="192.168.1.10:8888" />
+          <TextField label="对方会话码" value={sid} onChange={setSid} placeholder="如 pd-AB12C34" />
           <TextField label="连接密码" value={password} onChange={setPassword} placeholder="一次性密码" type="password" />
-          <Button variant="primary" disabled={!addr || !password} onClick={() => session.connect(addr, password)}>
+          <TextField label="中继/VPS 地址" value={relay} onChange={setRelay} placeholder="127.0.0.1:8977" />
+          <Button variant="primary" disabled={!sid || !password} onClick={() => session.connectAuto(relay, sid, password)}>
             {busy ? '连接中…' : '连接'}
           </Button>
+          {session.transport && <p className="pd-hint">传输路径：{session.transport}</p>}
           {session.error && <p className="pd-error">{session.error}</p>}
         </div>
       ) : (
         <div className="pd-viewer-active">
           <div className="pd-toolbar">
-            <span className="pd-toolbar__addr">{addr}</span>
+            <span className="pd-toolbar__addr">{sid}</span>
+            <span className="pd-hint">{session.transport ?? ''}</span>
             <Button variant="danger" size="sm" onClick={session.disconnect}>断开</Button>
           </div>
           <VideoView aspect={session.screen ?? undefined} />
