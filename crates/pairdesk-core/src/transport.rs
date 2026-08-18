@@ -15,10 +15,30 @@ use anyhow::{Result, bail};
 use crate::protocol::{
     Frame, FrameType, HEADER_LEN, MAX_FRAME, encode_header, parse_header,
 };
+use crate::quic_frame::FrameStream;
 
 pub struct Connection {
     stream: TcpStream,
     rx_buf: Vec<u8>,
+}
+
+/// 让 TCP 连接也走统一的 [`FrameStream`] 接口（QUIC 与 TCP 在同一会话逻辑下互操作）。
+impl FrameStream for Connection {
+    fn recv_frame(&mut self) -> Result<Option<Frame>> {
+        Connection::recv_frame(self)
+    }
+    fn send_frame(&mut self, ty: FrameType, payload: &[u8]) -> Result<()> {
+        Connection::send_frame(self, ty, payload)
+    }
+    fn set_read_timeout(&mut self, d: Duration) -> Result<()> {
+        Connection::set_read_timeout(self, d)
+    }
+    fn try_clone(&self) -> Result<Self> {
+        Connection::try_clone(self)
+    }
+    fn peer_addr(&self) -> Result<std::net::SocketAddr> {
+        Connection::peer_addr(self)
+    }
 }
 
 impl Connection {

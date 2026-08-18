@@ -114,6 +114,22 @@ impl CoreHandle {
         session::spawn_viewer_via_relay(relay, sid, password)
     }
 
+    /// 启动"被控端"（QUIC 直连，异网打洞用）：在 hole_port 起 QUIC server。
+    pub fn start_host_via_quic(
+        hole_port: u16,
+        password: String,
+    ) -> anyhow::Result<(CoreHandle, Receiver<CoreEvent>)> {
+        session::spawn_host_via_quic(hole_port, password)
+    }
+
+    /// 启动"控制端"（QUIC 直连，异网打洞用）：连到打洞端点。
+    pub fn connect_via_quic(
+        hole: SocketAddr,
+        password: String,
+    ) -> anyhow::Result<(CoreHandle, Receiver<CoreEvent>)> {
+        session::spawn_viewer_via_quic(hole, password)
+    }
+
     /// 调节画质/帧率。
     pub fn set_quality(&self, q: Quality) {
         let _ = self.tx.send(ControlCommand::SetQuality(q));

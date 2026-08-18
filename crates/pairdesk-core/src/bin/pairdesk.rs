@@ -100,6 +100,13 @@ fn run_host(args: &[String]) -> anyhow::Result<()> {
         handle.set_quality(Quality { jpeg, fps });
         return event_pump(&rx);
     }
+    // QUIC 打洞直连模式：serve --quic-port <port>（被控端在异网打洞端口等 viewer）
+    if let Some(qp) = a.get("quic-port").and_then(|v| v.parse::<u16>().ok()) {
+        println!("[被控端] QUIC 打洞直连 端口 {} 密码:{} 品质:jpeg={} fps={}", qp, password, jpeg, fps);
+        let (handle, rx) = CoreHandle::start_host_via_quic(qp, password)?;
+        handle.set_quality(Quality { jpeg, fps });
+        return event_pump(&rx);
+    }
     println!("[被控端] 直连监听 0.0.0.0:{} 密码:{} 品质:jpeg={} fps={}", port, password, jpeg, fps);
     let (handle, rx) = CoreHandle::start_host(port, password)?;
     handle.set_quality(Quality { jpeg, fps });
@@ -140,6 +147,13 @@ fn run_viewer(args: &[String]) -> anyhow::Result<()> {
     let frames: u32 = a.get("frames").and_then(|v| v.parse().ok()).unwrap_or(10);
     let dump_dir = a.get("dump-dir").map(PathBuf::from);
     let test_input = a.get("test-input").cloned();
+    // QUIC 打洞直连模式：connect --quic <hole-addr>（pos 给占位即可）
+    if let Some(hole_str) = a.get("quic").cloned() {
+        let hole: SocketAddr = hole_str.parse()?;
+        println!("[控制端] QUIC 直连 {} 密码:{} 收 {} 帧", hole, password, frames);
+        let (handle, rx) = CoreHandle::connect_via_quic(hole, password)?;
+        return run_viewer_loop(&handle, &rx, frames, dump_dir, test_input);
+    }
     // 中继模式：提供 --relay 与 --sid 时经中继，否则直连 addr
     let relay_opt = a.get("relay").map(|s| {
         s.parse::<std::net::SocketAddr>()

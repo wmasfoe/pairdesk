@@ -19,6 +19,7 @@ use crate::capture::{PlatformCapturer, ScreenCapturer};
 use crate::encode::encode_jpeg;
 use crate::input::{InputInjector, PlatformInjector};
 use crate::protocol::*;
+use crate::quic_frame::FrameStream;
 use crate::relay;
 use crate::transport::{accept_once, connect, Connection};
 use crate::{ControlCommand, CoreEvent, Quality};
@@ -120,6 +121,88 @@ pub fn spawn_viewer_via_relay(
     Ok((h, event_rx))
 }
 
+// ---------- QUIC 直连（异网打洞后的 P2P 传输） ----------
+
+/// 被控端 QUIC 直连：在 hole_port 起 QUIC server，等 viewer 连接后跑会话。
+pub fn spawn_host_via_quic(
+    hole_port: u16,
+    password: String,
+) -> Result<(crate::CoreHandle, Receiver<CoreEvent>)> {
+    let (event_tx, event_rx) = channel();
+    let (cmd_tx, cmd_rx) = channel();
+    let cmd_rx = Arc::new(Mutex::new(cmd_rx));
+    let h = crate::CoreHandle::from_tx(cmd_tx);
+    thread::Builder::new()
+        .name("pairdesk-host-quic".into())
+        .spawn(move || {
+            let result = (|| -> Result<()> {
+                let id = crate::certs::ensure_identity(&identity_dir())?;
+                let rt = Arc::new(tokio::runtime::Runtime::new()?);
+                let (send, recv) = rt.block_on(async move {
+                    let server = quinn::Endpoint::server(
+                        crate::certs::server_quic_config(&id)?,
+                        (std::net::Ipv4Addr::UNSPECIFIED, hole_port).into(),
+                    )?;
+                    let inc = server
+                        .accept()
+                        .await
+                        .ok_or_else(|| anyhow::anyhow!("QUIC server 关闭"))?;
+                    let conn = inc.await?;
+                    conn.accept_bi().await.map_err(anyhow::Error::from)
+                })?;
+                let fs = crate::quic_frame::QuicFrameStream::new(rt, send, recv);
+                let _ = host_session_once(fs, &password, &event_tx, &cmd_rx);
+                Ok(())
+            })();
+            if let Err(e) = result {
+                let _ = event_tx.send(CoreEvent::Error(format!("QUIC 被控端: {}", e)));
+            }
+        })?;
+    Ok((h, event_rx))
+}
+
+/// 控制端 QUIC 直连：连到打洞端点，跑会话。
+pub fn spawn_viewer_via_quic(
+    hole: SocketAddr,
+    password: String,
+) -> Result<(crate::CoreHandle, Receiver<CoreEvent>)> {
+    let (event_tx, event_rx) = channel();
+    let (cmd_tx, cmd_rx) = channel();
+    let cmd_rx = Arc::new(Mutex::new(cmd_rx));
+    let h = crate::CoreHandle::from_tx(cmd_tx);
+    thread::Builder::new()
+        .name("pairdesk-viewer-quic".into())
+        .spawn(move || {
+            let result = (|| -> Result<()> {
+                let id = crate::certs::ensure_identity(&identity_dir())?;
+                let cfg = crate::certs::client_quic_config(&id)?;
+                let rt = Arc::new(tokio::runtime::Runtime::new()?);
+                let (send, recv) = rt.block_on(async move {
+                    let mut ep = quinn::Endpoint::client("0.0.0.0:0".parse()?)?;
+                    ep.set_default_client_config(cfg);
+                    let conn = ep
+                        .connect(hole, "pairdesk.local")?
+                        .await
+                        .map_err(anyhow::Error::from)?;
+                    conn.open_bi().await.map_err(anyhow::Error::from)
+                })?;
+                let fs = crate::quic_frame::QuicFrameStream::new(rt, send, recv);
+                viewer_session_with_conn(fs, &password, &event_tx, &cmd_rx)
+            })();
+            if let Err(e) = result {
+                let _ = event_tx.send(CoreEvent::Error(format!("QUIC 控制端: {}", e)));
+            }
+        })?;
+    Ok((h, event_rx))
+}
+
+/// 身份证书目录（~/.pairdesk；测试环境可经 HOME 调整）。
+fn identity_dir() -> std::path::PathBuf {
+    std::env::var("HOME")
+        .map(|h| std::path::PathBuf::from(h).join(".pairdesk"))
+        .unwrap_or_else(|_| "/tmp/pd-quic".into())
+}
+
 // ---------- 被控端 ----------
 
 fn host_session(
@@ -147,8 +230,8 @@ fn host_session(
 }
 
 /// 处理单个会话（一个连接从握手到断开）。
-fn host_session_once(
-    mut conn: Connection,
+fn host_session_once<C: FrameStream + Send + 'static>(
+    mut conn: C,
     password: &str,
     tx: &Sender<CoreEvent>,
     rx: &Arc<Mutex<Receiver<ControlCommand>>>,
@@ -157,12 +240,12 @@ fn host_session_once(
     let _peer = conn.peer_addr()?;
 
     // ---- 握手 ----
-    let hello = recv_typed::<HelloMsg>(&mut conn, FrameType::Hello)?;
+    let hello = recv_typed::<_, HelloMsg>(&mut conn, FrameType::Hello)?;
     let host_random: [u8; 16] = rand::random();
     let salt: [u8; 32] = rand::random();
     conn.send_frame(FrameType::HelloAck, &HelloAckMsg { host_random, salt }.encode())?;
 
-    let auth = recv_typed::<AuthMsg>(&mut conn, FrameType::Auth)?;
+    let auth = recv_typed::<_, AuthMsg>(&mut conn, FrameType::Auth)?;
     let expect = password_hash(&salt, password);
     if auth.hash != expect {
         conn.send_frame(FrameType::AuthDenied, &AuthDeniedMsg { reason: "密码错误".into() }.encode())?;
@@ -329,8 +412,8 @@ fn viewer_session(
 }
 
 /// 在已建立的连接上执行控制端握手 + 事件循环（直连与中继复用同一套逻辑）。
-fn viewer_session_with_conn(
-    mut conn: Connection,
+fn viewer_session_with_conn<C: FrameStream + Send + 'static>(
+    mut conn: C,
     password: &str,
     tx: &Sender<CoreEvent>,
     rx: &Arc<Mutex<Receiver<ControlCommand>>>,
@@ -340,7 +423,7 @@ fn viewer_session_with_conn(
     // ---- 握手 ----
     let viewer_random: [u8; 16] = rand::random();
     conn.send_frame(FrameType::Hello, &HelloMsg { viewer_random }.encode())?;
-    let ack = recv_typed::<HelloAckMsg>(&mut conn, FrameType::HelloAck)?;
+    let ack = recv_typed::<_, HelloAckMsg>(&mut conn, FrameType::HelloAck)?;
     let auth = AuthMsg { hash: password_hash(&ack.salt, password) };
     conn.send_frame(FrameType::Auth, &auth.encode())?;
 
@@ -461,9 +544,7 @@ fn viewer_session_with_conn(
 // ---------- 握手辅助 ----------
 
 /// 接收指定类型的一帧并解码（明文握手阶段用）。
-fn recv_typed<T>(conn: &mut Connection, ty: FrameType) -> Result<T>
-where
-    T: HandshakeMsg,
+fn recv_typed<C: FrameStream, T: HandshakeMsg>(conn: &mut C, ty: FrameType) -> Result<T>
 {
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {

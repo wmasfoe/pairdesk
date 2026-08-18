@@ -7,6 +7,7 @@
 //!
 //! 帧格式与 TCP 一致（见 `protocol.rs`），保证两端无论走 TCP 还是 QUIC 协议互通。
 
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use anyhow::{Result, bail};
@@ -21,9 +22,23 @@ pub trait FrameStream {
     fn recv_frame(&mut self) -> Result<Option<Frame>>;
     /// 发送一帧。
     fn send_frame(&mut self, ty: FrameType, payload: &[u8]) -> Result<()>;
+    /// 设置读超时（用于心跳断线检测）。QUIC 默认 no-op（其自带 idle timeout 兜底）。
+    fn set_read_timeout(&mut self, _d: std::time::Duration) -> Result<()> {
+        Ok(())
+    }
+    /// 复制一份可独立读写的句柄，供会话多线程（recv/ctrl/send）各自使用。
+    /// TCP 用 `try_clone`（共享 socket）；QUIC 用共享内部 Arc 克隆。
+    fn try_clone(&self) -> Result<Self>
+    where
+        Self: Sized;
+    /// 对端地址（仅日志用；QUIC 默认返回占位）。
+    fn peer_addr(&self) -> Result<SocketAddr> {
+        Ok(([0, 0, 0, 0], 0u16).into())
+    }
 }
 
 /// 基于 QUIC 双向流的同步帧流。
+#[derive(Clone)]
 pub struct QuicFrameStream {
     rt: Arc<tokio::runtime::Runtime>, // 与 QUIC endpoint 共享的运行时（驱动 IO）
     send: Arc<tokio::sync::Mutex<quinn::SendStream>>,
@@ -46,6 +61,10 @@ impl QuicFrameStream {
 }
 
 impl FrameStream for QuicFrameStream {
+    fn try_clone(&self) -> Result<Self> {
+        Ok(self.clone()) // send/recv 是内部 Arc，克隆共享同一对流
+    }
+
     fn recv_frame(&mut self) -> Result<Option<Frame>> {
         let rt = self.rt.clone();
         let recv = self.recv.clone();
