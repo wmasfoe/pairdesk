@@ -108,11 +108,17 @@ jobs:
       - name: Publish GitHub Release
         run: |
           set -e
-          FILES=$(find artifacts -type f \( -name 'pairdesk-*' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.appimage' -o -name '*.dmg' -o -name '*.pkg' -o -name '*.msi' -o -name '*.exe' -o -name '*.rpm' \) | sort | uniq)
+          # 只收集真正的安装包(.deb/.AppImage/.dmg/.msi)与 CLI(dist-cli/pairdesk*);
+          # 若用 pairdesk-* 全匹配会误收 bundle 里 deb/AppImage 解压的中间文件(pairdesk-app.png、usr/bin/pairdesk-app)
+          CLI=$(find artifacts -type f -path '*/dist-cli/pairdesk*')
+          PKG=$(find artifacts -type f \( -name '*.deb' -o -name '*.AppImage' -o -name '*.appimage' -o -name '*.dmg' -o -name '*.pkg' -o -name '*.msi' -o -name '*.rpm' \))
+          FILES=$(printf '%s\n%s\n' "$CLI" "$PKG" | sort -u)
           echo "发布文件:"; echo "$FILES"
-          gh release create "$GITHUB_REF_NAME" \
+          # publish job 未 checkout(无 .git)，必须显式 --repo，否则 gh 报 "not a git repository"
+          gh release create "$GITHUB_REF_NAME" --repo wmasfoe/pairdesk \
             --title "PairDesk $GITHUB_REF_NAME" \
             --generate-notes \
-            $FILES || gh release edit "$GITHUB_REF_NAME" $FILES
+            $FILES || gh release edit "$GITHUB_REF_NAME" --repo wmasfoe/pairdesk \
+            --title "PairDesk $GITHUB_REF_NAME" $FILES
         env:
           GH_TOKEN: ${{ github.token }}
