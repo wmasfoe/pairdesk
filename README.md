@@ -82,6 +82,15 @@
 | CLI（三平台） | `pairdesk-<OS>-<arch>` + `pairdesk-relay-<OS>-<arch>` |
 | CLI（Linux 静态） | `pairdesk-linux-x86_64-musl`（零 glibc 依赖） |
 
+### macOS 一键安装（未签名，自动解除隔离）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/wmasfoe/pairdesk/main/scripts/install-macos.sh | bash
+```
+
+脚本自动：解析最新 dmg → 下载 → 安装到 `/Applications` → 解除 quarantine（`xattr -dr`），
+装完直接打开不会再报「已损坏」。加 `--open` 可装完自动启动。
+
 ## 快速体验
 
 ```bash
