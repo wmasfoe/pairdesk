@@ -44,11 +44,11 @@ jobs:
           node-version: 22
       - name: Enable pnpm
         run: corepack enable
-      - name: Cache Frontend
-        uses: actions/cache@v4
-        with:
-          path: app/node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('pnpm-lock.yaml') }}
+      # 不缓存 app/node_modules：actions/cache@v4 在 Windows restore 缓存时会
+      # 产出 realpath/EPERM 不可读的 node_modules（pnpm rebuild esbuild 与
+      # vite build 均因 stat node_modules 失败），且是稳定复现、重跑无效。
+      # 同一 HEAD 首个 push run 就是"全新 pnpm install(无缓存)"在三平台全绿，
+      # 故去掉缓存、每次全新装依赖最可靠（多花几十秒，可接受）。
 
       # ---- 构建前端（产 app/dist）----
       - name: Install & build frontend
