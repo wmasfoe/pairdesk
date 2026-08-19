@@ -3,6 +3,6 @@ packages:
   - "app"
   - "packages/*"
 
-# 允许 esbuild 执行 postinstall（下载其平台二进制；vite 依赖它）
-onlyBuiltDependencies:
-  - esbuild
+# pnpm v11+：显式允许 esbuild 执行 postinstall（下载其平台二进制；vite 依赖它）
+allowBuilds:
+  esbuild: true
