@@ -1,0 +1,114 @@
+# PairDesk 三平台构建 + Release 发布
+#
+# 在真实的 Linux / macOS / Windows runner 上各自编译内核 + Tauri App + CLI
+# （macOS/Windows 的"编译验证"由 CI 承担——本开发机是 Linux，无法本地编 mac/win）。
+# 打 tag v* 时把产物发布到 GitHub Release。
+#
+# 注意边界：CI 是无头环境，能验证"编译 + 单元测试 + 打包"，
+# 但真实"屏幕采集/输入注入"需要真实显示会话与系统权限，仍在真机手测。
+name: release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: build-${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-14, windows-2022]
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---- Linux 系统依赖（Tauri webkit）----
+      - name: Install Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      # ---- Rust ----
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # ---- Node + pnpm（前端）----
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Enable pnpm
+        run: corepack enable
+      - name: Cache Frontend
+        uses: actions/cache@v4
+        with:
+          path: app/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('pnpm-lock.yaml') }}
+
+      # ---- 构建前端（产 app/dist）----
+      - name: Install & build frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm rebuild esbuild
+          cd app && pnpm build
+        shell: bash
+
+      # ---- 编译内核 + App + CLI（release）----
+      - name: Compile (cargo release)
+        run: cargo build --release --workspace
+        shell: bash
+
+      # ---- 单元测试（无心跳 GUI 依赖）----
+      - name: Unit tests
+        run: cargo test --release --workspace
+        shell: bash
+
+      # ---- Tauri bundle（打包成各平台安装包）----
+      - name: Tauri bundle
+        run: |
+          cd crates/pairdesk-app
+          ../../node_modules/.bin/tauri build
+        shell: bash
+
+      # ---- 收集产物 ----
+      - name: Collect CLI binaries
+        run: |
+          mkdir -p dist-cli
+          cp target/release/pairdesk dist-cli/pairdesk-${{ runner.os }}-$(uname -m)${{ runner.os == 'Windows' && '.exe' || '' }}
+          cp target/release/pairdesk-relay dist-cli/pairdesk-relay-${{ runner.os }}-$(uname -m)${{ runner.os == 'Windows' && '.exe' || '' }}
+        shell: bash
+
+      - name: Upload bundle & CLI
+        uses: actions/upload-artifact@v4
+        with:
+          name: pairdesk-${{ matrix.os }}
+          path: |
+            dist-cli/*
+            target/release/bundle/**
+          if-no-files-found: warn
+
+  release:
+    name: publish
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish GitHub Release
+        run: |
+          set -e
+          FILES=$(find artifacts -type f \( -name 'pairdesk-*' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.appimage' -o -name '*.dmg' -o -name '*.pkg' -o -name '*.msi' -o -name '*.exe' -o -name '*.rpm' \) | sort | uniq)
+          echo "发布文件:"; echo "$FILES"
+          gh release create "$GITHUB_REF_NAME" \
+            --title "PairDesk $GITHUB_REF_NAME" \
+            --generate-notes \
+            $FILES || gh release edit "$GITHUB_REF_NAME" $FILES
+        env:
+          GH_TOKEN: ${{ github.token }}
