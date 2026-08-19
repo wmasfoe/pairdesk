@@ -19,10 +19,10 @@ export const STATUS_COLORS = {
   error: '#ef4444', // 错误（红）
 } as const;
 
-/** 强调色（主操作）与危险色 */
+/** 强调色（主操作）与危险色 —— teal 系，与 logo 青色信号统一 */
 export const ACCENT = {
-  primary: '#3b82f6', // 蓝，主操作按钮
-  primaryHover: '#2563eb',
+  primary: '#0d9488', // teal，主操作按钮
+  primaryHover: '#0f766e',
   danger: '#ef4444', // 危险操作（断开等）
   dangerHover: '#dc2626',
 } as const;
