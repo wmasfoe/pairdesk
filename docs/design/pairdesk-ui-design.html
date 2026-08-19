@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PairDesk UI 设计稿 — 三方向对比</title>
+<style>
+  :root{
+    --cd-sys:none;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  body{font-family:'Segoe UI',-apple-system,Helvetica,Arial,sans-serif; background:#f2f4f8; color:#1f2430; padding:24px}
+  .deck-head{max-width:1080px;margin:0 auto 20px}
+  .deck-head h1{font-size:22px}
+  .deck-head p{color:#6b7280; font-size:13px; margin-top:6px}
+  .tabs{display:flex; gap:8px; margin:14px 0 0}
+  .tab{border:1px solid #d1d5db; background:#fff; border-radius:8px; padding:8px 14px; font-size:13px; cursor:pointer}
+  .tab.active{background:#1f2430; color:#fff; border-color:#1f2430}
+  .stage{max-width:1080px; margin:0 auto; display:grid; gap:22px}
+  .dir{display:none}
+  .dir.show{display:grid; gap:22px}
+  .dircap{text-align:center; color:#6b7280; font-size:12px; margin-top:-8px}
+  .two{display:grid; grid-template-columns:1fr 1fr; gap:0; border:1px solid #d9dee7; border-radius:14px; overflow:hidden; background:#fff}
+  .scr{min-height:200px}
+  .scr:nth-child(1){border-right:1px solid #e5e9f0}
+  .scr-label{font-size:11px; color:#9aa0a6; background:#fafbfc; text-align:center; padding:6px; border-bottom:1px solid #eef1f5; letter-spacing:1px}
+
+  /* ================= 方向 A：Bright Console（亮色控制台） ================= */
+  .a .g1{border-top:3px solid #3b82f6}
+  .a-host{padding:20px; font:14px/1.5 var(--f)}
+  .a-host .logo{display:flex; align-items:center; gap:10px; font-weight:700; font-size:15px}
+  .a-host .logo i{width:26px;height:26px;border-radius:8px;background:#3b82f6; display:inline-block; position:relative}
+  .a-host .logo i::before,.a-host .logo i::after{content:"";position:absolute;width:7px;height:7px;border-radius:50%;background:#fff;top:9px}
+  .a-host .logo i::before{left:3px}.a-host .logo i::after{right:3px}
+  .a-card{border:1px solid #e4e8ef; border-radius:12px; background:#fbfcfe; padding:16px; margin-top:16px}
+  .a-code{font-family:ui-monospace,Menlo,monospace; font-size:26px; letter-spacing:6px; text-align:center; color:#111827; padding:10px 0 2px}
+  .a-sub{text-align:center; color:#9aa0a6; font-size:12px}
+  .a-row{display:flex; gap:10px; margin-top:14px}
+  .a-field{flex:1; border:1px solid #d6dce6; border-radius:8px; padding:9px 10px; font-size:13px; background:#fff}
+  .a-btn{background:#3b82f6; color:#fff; border:0; border-radius:8px; padding:9px 16px; font-size:13px; font-weight:600}
+  .a-btn.ghost{background:#fff; color:#3b82f6; border:1px solid #3b82f6}
+  .a-toggle{display:flex; align-items:center; justify-content:space-between; margin-top:16px; padding:12px 16px; border:1px solid #e4e8ef; border-radius:10px}
+  .a-toggle b{font-size:13px}.a-toggle span{color:#9aa0a6; font-size:12px}
+  .a-switch{width:38px;height:22px;border-radius:11px;background:#cbd5e1;position:relative;transition:.2s}
+  .a-switch.on{background:#22c55e}
+  .a-switch::after{content:"";position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:2px;left:2px;transition:.2s}
+  .a-switch.on::after{left:18px}
+  .a-status{margin-top:14px; display:flex; align-items:center; gap:8px; font-size:13px; color:#6b7280; padding:10px 14px; border-radius:10px; background:#fffbe6; border:1px solid #fde68a}
+  .a-dot{width:9px;height:9px;border-radius:50%;background:#f59e0b}
+  /* 画面 */
+  .a-view{padding:0; display:flex; flex-direction:column}
+  .a-toolbar{display:flex; align-items:center; gap:10px; padding:10px 16px; border-bottom:1px solid #eef1f5; background:#fafbfc}
+  .a-toolbar .lbl{font-size:13px; font-weight:600}
+  .a-toolbar .stat{margin-left:auto; font-size:12px; color:#22c55e; display:flex; align-items:center; gap:5px}
+  .a-toolbar .stat i{width:8px;height:8px;border-radius:50%;background:#22c55e}
+  .a-canvas{flex:1; background:linear-gradient(135deg,#eef2f7,#e2e8f0); position:relative; min-height:180px; display:flex; align-items:center; justify-content:center; color:#93a1b5; font-size:13px}
+  .a-fps{position:absolute; right:12px; bottom:10px; font-size:11px; color:#64748b; background:#fff; padding:2px 8px; border-radius:6px}
+
+  /* ================= 方向 B：Dark Relay（暗色专业远程工具） ================= */
+  .b{background:#0e1116; color:#e6e9ef}
+  .b .g1{border-top:3px solid #22d3ee}
+  .b-host{padding:22px; font:13px/1.5 var(--f)}
+  .b-host .bar{display:flex; align-items:center; gap:12px; font-weight:700; font-size:14px}
+  .b-host .bar i{width:24px;height:24px;border-radius:7px;background:#22d3ee;display:inline-block;position:relative}
+  .b-host .bar i::before,.b-host .bar i::after{content:"";position:absolute;width:6px;height:6px;border-radius:50%;background:#0e1116;top:9px}
+  .b-host .bar i::before{left:4px}.b-host .bar i::after{right:4px}
+  .b-card{border:1px solid #232a35; background:#151a22; border-radius:12px; padding:18px; margin-top:14px}
+  .b-lbl{color:#7c8696; font-size:11px; letter-spacing:1px; margin-bottom:8px}
+  .b-code{font-family:ui-monospace,Menlo,monospace; font-size:30px; letter-spacing:8px; text-align:center; color:#fff}
+  .b-btn{background:#22d3ee; color:#06272e; border:0; border-radius:8px; padding:10px; width:100%; font-weight:700; margin-top:8px}
+  .b-field{width:100%; background:#10151c; border:1px solid #232a35; border-radius:8px; padding:9px 11px; color:#dfe6ee; margin-top:8px; font-size:13px}
+  .b-toggle{display:flex; justify-content:space-between; align-items:center; margin-top:14px; font-size:13px}
+  .b-sw{width:38px;height:22px;border-radius:11px;background:#2a3441;position:relative}
+  .b-sw.on{background:#22d3ee}
+  .b-sw::after{content:"";position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:2px;left:2px;transition:.2s}
+  .b-sw.on::after{left:18px}
+  .b-hint{margin-top:14px; font-size:12px; color:#8d97a6; padding:10px 12px; border:1px solid #232a35; border-radius:9px}
+  .b-dot{width:9px;height:9px;border-radius:50%;background:#22d3ee; display:inline-block; margin-right:7px}
+  .b-view{display:flex; flex-direction:column}
+  .b-tool{display:flex; align-items:center; gap:10px; padding:9px 14px; border-bottom:1px solid #232a35; font-size:12px; color:#8d97a6}
+  .b-tool .c{margin-left:auto; color:#22d3ee; display:flex; align-items:center; gap:5px}
+  .b-tool .c i{width:7px;height:7px;border-radius:50%;background:#22d3ee}
+  .b-canvas{flex:1; min-height:200px; background:#0b0f14; position:relative; display:flex; align-items:center; justify-content:center; color:#4b5a6b; font-size:13px}
+  .b-fps{position:absolute; right:12px; bottom:10px; font-size:11px; color:#7c8696}
+
+  /* ================= 方向 C：Soft Assist（浅色轻量助手式） ================= */
+  .c{background:#fff; color:#20242b}
+  .c .g1{border-top:3px solid #7c8fff}
+  .c-host{padding:24px; font:13px/1.6 var(--f)}
+  .c-host .word{font-weight:800; font-size:18px}
+  .c-host .word span{color:#7c8fff}
+  .c-card{margin-top:18px; text-align:center; border-radius:18px; background:#f6f8ff; padding:24px 20px; border:1px solid #e8ecff}
+  .c-caption{color:#9aa0a6; font-size:12px}
+  .c-code{font-family:ui-monospace,Menlo,monospace; font-size:34px; letter-spacing:10px; color:#20242b; margin-top:4px}
+  .c-pair{display:flex; gap:10px; margin-top:16px; justify-content:center}
+  .c-btn{border-radius:12px; padding:11px 22px; font-weight:700; font-size:13px; background:#20242b; color:#fff}
+  .c-btn.light{background:#fff; color:#20242b; border:1px solid #e2e6f2}
+  .c-switchline{display:flex; align-items:center; justify-content:center; gap:10px; margin-top:18px; font-size:13px; color:#5a6270}
+  .c-sw{width:40px;height:24px;border-radius:12px;background:#dfe4f5;position:relative}
+  .c-sw.on{background:#7c8fff}
+  .c-sw::after{content:"";position:absolute;width:20px;height:20px;border-radius:50%;background:#fff;top:2px;left:2px;transition:.2s}
+  .c-sw.on::after{left:18px}
+  .c-view{display:flex; flex-direction:column}
+  .c-tool{display:flex; gap:8px; padding:12px 16px; border-bottom:1px solid #eef1f8}
+  .c-tool .pill{font-size:12px; padding:5px 12px; border-radius:99px; background:#f0f2fa; color:#5a6270}
+  .c-tool .pill.on{background:#20242b; color:#fff}
+  .c-tool .r{margin-left:auto; display:flex; align-items:center; gap:6px; font-size:12px; color:#16a34a}
+  .c-tool .r i{width:8px;height:8px;border-radius:50%;background:#16a34a}
+  .c-canvas{flex:1; min-height:200px; background:linear-gradient(180deg,#f9faff,#eef1f8); position:relative; display:flex; align-items:center; justify-content:center; color:#9099ab; font-size:13px}
+  .c-fps{position:absolute; right:12px; bottom:10px; font-size:11px; color:#9aa0a6; background:#fff; padding:2px 9px; border-radius:99px}
+  @media(max-width:760px){ .two{grid-template-columns:1fr} .scr:nth-child(1){border-right:0;border-bottom:1px solid #e5e9f0} }
+</style>
+</head>
+<body>
+  <div class="deck-head">
+    <h1>PairDesk · 界面设计稿 — 三方向对比</h1>
+    <p>被控端页（生成会话码+开关）+ 控制端页（连上看画面）。左=被控准备，右=控制画面。点顶部切换方向。</p>
+    <div class="tabs">
+      <button class="tab active" data-d="A">A · Bright Console</button>
+      <button class="tab" data-d="B">B · Dark Relay</button>
+      <button class="tab" data-d="C">C · Soft Assist</button>
+    </div>
+  </div>
+
+  <div class="stage">
+
+    <!-- 方向 A -->
+    <div class="dir show a" id="dirA">
+      <div class="two">
+        <div class="scr g1">
+          <div class="scr-label">被控端 · 让我被协助</div>
+          <div class="a-host">
+            <div class="logo"><i></i>PairDesk</div>
+            <div class="a-card">
+              <div class="a-code">4821</div>
+              <div class="a-sub">会话码 · 让对方输入</div>
+              <div class="a-row">
+                <input class="a-field" placeholder="连接密钥" value="••••••">
+                <button class="a-btn ghost">重置</button>
+              </div>
+              <div class="a-row">
+                <input class="a-field" placeholder="中继地址" value="relay.pairdesk.dev">
+              </div>
+            </div>
+            <div class="a-toggle">
+              <div><b>允许远程控制</b><br><span>关闭则对方无法连接</span></div>
+              <div class="a-switch on"></div>
+            </div>
+            <button class="a-btn" style="width:100%;margin-top:16px">开始接收协助</button>
+            <div class="a-status"><span class="a-dot"></span>等待连接中 · 会话码 4821</div>
+          </div>
+        </div>
+        <div class="scr">
+          <div class="scr-label">控制端 · 连接后</div>
+          <div class="a-view">
+            <div class="a-toolbar"><span class="lbl">4832 · 好友的 Mac</span><span class="stat"><i></i>已连接</span></div>
+            <div class="a-canvas">实时画面预览在这里</div>
+            <span class="a-fps">30 fps · 8 Mbps · 12ms</span>
+          </div>
+        </div>
+      </div>
+      <div class="dircap">A · 亮色控制台：清晰的状态栏 + 大号会话码，主操作醒目</div>
+    </div>
+
+    <!-- 方向 B -->
+    <div class="dir b" id="dirB">
+      <div class="two">
+        <div class="scr g1">
+          <div class="scr-label">被控端 · 让我被协助</div>
+          <div class="b-host">
+            <div class="bar"><i></i>PairDesk</div>
+            <div class="b-card">
+              <div class="b-lbl">SESSION CODE</div>
+              <div class="b-code">4821</div>
+              <input class="b-field" placeholder="PIN·连接密钥">
+              <input class="b-field" placeholder="中继地址·relay.pairdesk.dev">
+              <button class="b-btn">开始接收协助</button>
+              <div class="b-toggle"><span>允许远程控制</span><div class="b-sw on"></div></div>
+            </div>
+            <div class="b-hint"><span class="b-dot"></span>等待连接 · 已就绪</div>
+          </div>
+        </div>
+        <div class="scr">
+          <div class="scr-label">控制端 · 连接后</div>
+          <div class="b-view">
+            <div class="b-tool">4832 · 好友的 Mac <span class="c"><i></i>30fps · 12ms</span></div>
+            <div class="b-canvas">实时画面预览</div>
+            <span class="b-fps">中继 · QUIC · 12ms</span>
+          </div>
+        </div>
+      </div>
+      <div class="dircap">B · 暗色专业远程工具：高密度、低光、类 ToDesk/RustDesk 视觉</div>
+    </div>
+
+    <!-- 方向 C -->
+    <div class="dir c" id="dirC">
+      <div class="two">
+        <div class="scr g1">
+          <div class="scr-label">被控端 · 让我被协助</div>
+          <div class="c-host">
+            <div class="word">让 <span>好友</span> 帮你 <br>远程处理</div>
+            <div class="c-card">
+              <div class="c-caption">把会话码告诉对方</div>
+              <div class="c-code">4821</div>
+              <div class="c-pair">
+                <input style="border:1px solid #e2e6f2;border-radius:12px;padding:10px 14px;font-size:13px" placeholder="连接密钥">
+                <button class="c-btn light">生成</button>
+              </div>
+              <div class="c-switchline"><span>允许远程控制</span><div class="c-sw on"></div></div>
+              <button class="c-btn" style="width:100%;margin-top:14px">开始接收协助</button>
+            </div>
+          </div>
+        </div>
+        <div class="scr">
+          <div class="scr-label">控制端 · 连接后</div>
+          <div class="c-view">
+            <div class="c-tool"><span class="pill">指针</span><span class="pill on">键盘</span><span class="r"><i></i>已连接</span></div>
+            <div class="c-canvas">实时画面预览</div>
+            <span class="c-fps">30 fps · 12ms</span>
+          </div>
+        </div>
+      </div>
+      <div class="dircap">C · 浅色轻量助手式：大片留白、大圆角、一句话引导，温暖亲近</div>
+    </div>
+
+  </div>
+
+<script>
+  document.querySelectorAll('.tab').forEach(t=>{t.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.dir').forEach(d=>d.classList.remove('show'));
+    t.classList.add('active');
+    document.getElementById('dir'+t.dataset.d).classList.add('show');
+  })});
+</script>
+</body>
+</html>
