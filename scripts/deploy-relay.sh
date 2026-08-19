@@ -39,7 +39,8 @@ trap 'rm -f "$TMP"' EXIT
 curl -fsSL "$URL" -o "$TMP"
 chmod +x "$TMP"
 install -m 0755 "$TMP" /usr/local/bin/pairdesk-relay
-/usr/local/bin/pairdesk-relay --version 2>/dev/null || echo "（--version 无输出属正常，二进制已就位）"
+# 注意: relay 没有 --version 参数(会把参数当端口解析并直接常驻启动), 这里只做文件检查
+test -x /usr/local/bin/pairdesk-relay && echo "二进制已就位: /usr/local/bin/pairdesk-relay"
 
 echo "==> [3/4] 注册 systemd 服务（模板实例: pairdesk-relay@${PORT}）"
 UNIT="/etc/systemd/system/pairdesk-relay@.service"
