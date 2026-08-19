@@ -65,16 +65,16 @@ jobs:
         run: cargo build --release --workspace
         shell: bash
 
-      # ---- 单元测试（无心跳 GUI 依赖）----
+      # ---- 单元测试（只测 lib，绕开 examples：它们在 mac/win 会用 Linux 专有的 x11rb）----
       - name: Unit tests
-        run: cargo test --release --workspace
+        run: cargo test --release --lib --workspace
         shell: bash
 
       # ---- Tauri bundle（打包成各平台安装包）----
       - name: Tauri bundle
         run: |
-          cd crates/pairdesk-app
-          ../../node_modules/.bin/tauri build
+          cd app
+          pnpm exec tauri build --config ../crates/pairdesk-app/tauri.conf.json
         shell: bash
 
       # ---- 收集产物 ----
