@@ -82,14 +82,28 @@
 | CLI（三平台） | `pairdesk-<OS>-<arch>` + `pairdesk-relay-<OS>-<arch>` |
 | CLI（Linux 静态） | `pairdesk-linux-x86_64-musl`（零 glibc 依赖） |
 
-### macOS 一键安装（未签名，自动解除隔离）
+### 一键安装（未签名，自动处理隔离/权限）
+
+**macOS**（自动下载最新 dmg → 装到 /Applications → 解除 quarantine，不再报「已损坏」）：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/wmasfoe/pairdesk/main/scripts/install-macos.sh | bash
 ```
 
-脚本自动：解析最新 dmg → 下载 → 安装到 `/Applications` → 解除 quarantine（`xattr -dr`），
-装完直接打开不会再报「已损坏」。加 `--open` 可装完自动启动。
+**Linux**（默认 .deb 需 sudo；`--appimage` 免 root 装到 ~/.local/bin）：
+
+```bash
+# Debian/Ubuntu（.deb + 自动补依赖）
+curl -fsSL https://raw.githubusercontent.com/wmasfoe/pairdesk/main/scripts/install-linux.sh | sudo bash
+# 免 root（AppImage）
+curl -fsSL https://raw.githubusercontent.com/wmasfoe/pairdesk/main/scripts/install-linux.sh | bash -s -- --appimage
+```
+
+**Windows**（PowerShell，msiexec 静默安装，**需管理员 PowerShell**）：
+
+```powershell
+irm https://raw.githubusercontent.com/wmasfoe/pairdesk/main/scripts/install-windows.ps1 | iex
+```
 
 ## 快速体验
 
