@@ -23,7 +23,7 @@ x11rb = { version = "0.13", features = ["xtest"] }
 # macOS 采集(core-graphics 截屏) + 注入(CGEvent)
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.9"
-core-graphics = "0.24"
+core-graphics = { version = "0.24", features = ["highsierra"] }
 
 [dev-dependencies]
 zune-jpeg = "0.4"

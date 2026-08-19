@@ -8,8 +8,10 @@
 
 use anyhow::{bail, Result};
 use core_graphics::event::{
-    CGMouseButton, CGEvent, CGEventFlags, CGEventTapLocation, CGEventType,
+    CGMouseButton, CGEvent, CGEventFlags, CGEventSourceStateID, CGEventTapLocation, CGEventType,
+    ScrollEventUnit,
 };
+use core_graphics::event_source::CGEventSource;
 use core_graphics::geometry::CGPoint;
 
 use super::{keysym, InputInjector};
@@ -25,12 +27,13 @@ impl MacInjector {
 impl InputInjector for MacInjector {
     fn move_mouse(&mut self, x: f64, y: f64) -> Result<()> {
         let ev = CGEvent::new_mouse_event(
-            None,
+            event_source()?,
             CGEventType::MouseMoved,
             CGPoint::new(x, y),
             CGMouseButton::Left,
-        )?;
-        ev.post(CGEventTapLocation::CGHIDEventTap);
+        )
+        .map_err(|_| anyhow::anyhow!("创建鼠标移动事件失败"))?;
+        ev.post(CGEventTapLocation::HID);
         Ok(())
     }
 
@@ -47,21 +50,23 @@ impl InputInjector for MacInjector {
         };
         // 取当前鼠标位置（让键击发生在光标处）
         let pos = mouse_location();
-        let ev = CGEvent::new_mouse_event(None, mouse_type, pos, mb)?;
-        ev.post(CGEventTapLocation::CGHIDEventTap);
+        let ev = CGEvent::new_mouse_event(event_source()?, mouse_type, pos, mb)
+            .map_err(|_| anyhow::anyhow!("创建鼠标按键事件失败"))?;
+        ev.post(CGEventTapLocation::HID);
         Ok(())
     }
 
     fn scroll(&mut self, _dx: f64, dy: f64) -> Result<()> {
         let ev = CGEvent::new_scroll_event(
-            None,
-            core_graphics::event::CGScrollEventUnit::Pixel,
-            2,
-            dy,
-            0.0,
-            0.0,
-        )?;
-        ev.post(CGEventTapLocation::CGHIDEventTap);
+            event_source()?,
+            ScrollEventUnit::PIXEL,
+            1,
+            dy as i32,
+            0,
+            0,
+        )
+        .map_err(|_| anyhow::anyhow!("创建滚动事件失败"))?;
+        ev.post(CGEventTapLocation::HID);
         Ok(())
     }
 
@@ -70,17 +75,27 @@ impl InputInjector for MacInjector {
             // 未映射的按键静默忽略（避免注入失败干扰）。
             return Ok(());
         };
-        let ev = CGEvent::new_keyboard_event(None, keycode, down)?;
+        let ev = CGEvent::new_keyboard_event(event_source()?, keycode, down)
+            .map_err(|_| anyhow::anyhow!("创建键盘事件失败"))?;
         ev.set_flags(flags_for_mods(mods));
-        ev.post(CGEventTapLocation::CGHIDEventTap);
+        ev.post(CGEventTapLocation::HID);
         Ok(())
     }
 }
 
+/// 新建一个全局 HID 系统状态的 CGEventSource（事件注入用）。
+fn event_source() -> Result<CGEventSource> {
+    CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+        .map_err(|_| anyhow::anyhow!("创建 CGEventSource 失败"))
+}
+
 /// 当前鼠标所在位置（用于把"按下/松开"落到光标处）。
 fn mouse_location() -> CGPoint {
-    match CGEvent::new(None) {
-        Ok(ev) => ev.location(),
+    match CGEventSource::new(CGEventSourceStateID::HIDSystemState) {
+        Ok(source) => match CGEvent::new(source) {
+            Ok(ev) => ev.location(),
+            Err(_) => CGPoint::new(0.0, 0.0),
+        },
         Err(_) => CGPoint::new(0.0, 0.0),
     }
 }
@@ -90,16 +105,16 @@ fn flags_for_mods(mods: u32) -> CGEventFlags {
     use super::{MOD_ALT, MOD_CTRL, MOD_META, MOD_SHIFT};
     let mut f = CGEventFlags::empty();
     if mods & MOD_SHIFT != 0 {
-        f.insert(CGEventFlags::MaskShift);
+        f.insert(CGEventFlags::CGEventFlagShift);
     }
     if mods & MOD_CTRL != 0 {
-        f.insert(CGEventFlags::MaskControl);
+        f.insert(CGEventFlags::CGEventFlagControl);
     }
     if mods & MOD_ALT != 0 {
-        f.insert(CGEventFlags::MaskAlternate);
+        f.insert(CGEventFlags::CGEventFlagAlternate);
     }
     if mods & MOD_META != 0 {
-        f.insert(CGEventFlags::MaskCommand);
+        f.insert(CGEventFlags::CGEventFlagCommand);
     }
     f
 }

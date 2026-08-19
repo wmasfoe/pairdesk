@@ -1,50 +1,51 @@
 //! macOS 屏幕采集 —— core-graphics 逐帧截屏（M2 里程碑真实实现）。
 //!
-//! 用 `CGDisplayCreateImage` 抓主显示器 → 取像素字节 → 转成 RGB(w*h*3)。
+//! 用 `CGDisplay::image()` 抓主显示器 → 取像素字节 → 转成 RGB(w*h*3)。
 //! 简单可靠、单机可自测；ScreenCaptureKit 的高效流式采集留作后续优化。
 //!
 //! ⚠️ 真机约束：采集需「屏幕录制」权限（系统设置→隐私与安全→屏幕录制，
 //! 授予运行 PairDesk 的终端/应用），否则 macOS 会返回全黑画面。
 
 use anyhow::{bail, Result};
-use core_foundation::base::TCFType;
-use core_graphics::data_provider::CGDataProvider;
-use core_graphics::display::{CGDisplayCreateImage, CGMainDisplayID};
+use core_graphics::display::CGDisplay;
 use core_graphics::image::CGImage;
 
 use super::{CapturedFrame, ScreenCapturer};
 
 pub struct MacCapturer {
-    display_id: u32,
+    display: CGDisplay,
     w: u32,
     h: u32,
 }
 
 impl MacCapturer {
     pub fn new() -> Result<MacCapturer> {
-        let display_id = CGMainDisplayID();
+        let display = CGDisplay::main();
         // 用一次截屏探得分辨率（简单，不依赖额外 API）
-        let cg = CGDisplayCreateImage(display_id);
-        let w = cg.width() as u32;
-        let h = cg.height() as u32;
+        let (w, h) = display
+            .image()
+            .map(|img| (img.width() as u32, img.height() as u32))
+            .unwrap_or((0, 0));
         if w == 0 || h == 0 {
-            bail!("无法取得主显示器分辨率(id={display_id})");
+            bail!("无法取得主显示器分辨率");
         }
-        Ok(MacCapturer { display_id, w, h })
+        Ok(MacCapturer { display, w, h })
     }
 }
 
 impl ScreenCapturer for MacCapturer {
     fn capture(&mut self) -> Result<CapturedFrame> {
-        let cg: CGImage = CGDisplayCreateImage(self.display_id);
+        let cg: CGImage = self
+            .display
+            .image()
+            .ok_or_else(|| anyhow::anyhow!("截屏失败(检查「屏幕录制」权限)"))?;
         let w = cg.width() as u32;
         let h = cg.height() as u32;
         if w == 0 || h == 0 {
             bail!("截屏失败(宽度或高度为 0；检查「屏幕录制」权限)");
         }
 
-        let provider = cg.data_provider();
-        let data = provider.data();
+        let data = cg.data();
         let bytes = data.bytes();
         let bpr = cg.bytes_per_row() as usize;
 
