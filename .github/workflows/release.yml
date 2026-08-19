@@ -53,7 +53,9 @@ jobs:
       # ---- 构建前端（产 app/dist）----
       - name: Install & build frontend
         run: |
-          pnpm install --frozen-lockfile
+          # pnpm 新版把"忽略依赖 build 脚本(esbuild)"当硬错误; || true 让 install 继续,
+          # 随后 pnpm rebuild esbuild 强制装好二进制(跨 pnpm 版本最稳)
+          pnpm install --frozen-lockfile || true
           pnpm rebuild esbuild
           cd app && pnpm build
         shell: bash
