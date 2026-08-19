@@ -3,8 +3,6 @@ packages:
   - "app"
   - "packages/*"
 
-  esbuild: set this to true or false
-
 # 允许 esbuild 执行 postinstall（下载其平台二进制；vite 依赖它）
 onlyBuiltDependencies:
   - esbuild
