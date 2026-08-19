@@ -90,14 +90,33 @@ jobs:
           cp target/release/pairdesk-relay dist-cli/pairdesk-relay-${{ runner.os }}-$(uname -m)${{ runner.os == 'Windows' && '.exe' || '' }}
         shell: bash
 
+      # ---- MUSL 全静态编译（仅 Linux）----
+      # 产出不依赖 glibc 的静态二进制，任何 Linux(Debian12/13/Ubuntu/Alpine) 直接跑。
+      # 用 cargo-zigbuild: 官方 RT 协调 Rust+zig 交叉到 x86_64-unknown-linux-musl,
+      # 避免 zig cc 与 Rust musl self-contained crt 重复(_init/_start)的坑。
+      - name: Build MUSL static CLI (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          rustup target add x86_64-unknown-linux-musl
+          pipx install cargo-zigbuild
+          export PATH="$HOME/.local/bin:$PATH"
+          cargo zigbuild --release --target x86_64-unknown-linux-musl -p pairdesk-core
+          cargo zigbuild --release --target x86_64-unknown-linux-musl -p pairdesk-relay
+          mkdir -p dist-cli-musl
+          cp target/x86_64-unknown-linux-musl/release/pairdesk dist-cli-musl/pairdesk-linux-x86_64-musl
+          cp target/x86_64-unknown-linux-musl/release/pairdesk-relay dist-cli-musl/pairdesk-relay-linux-x86_64-musl
+        shell: bash
+
       - name: Upload bundle & CLI
         uses: actions/upload-artifact@v4
         with:
           name: pairdesk-${{ matrix.os }}
           path: |
             dist-cli/*
+            dist-cli-musl/*
             target/release/bundle/**
           if-no-files-found: warn
+
 
   release:
     name: publish
@@ -111,9 +130,9 @@ jobs:
       - name: Publish GitHub Release
         run: |
           set -e
-          # 只收集真正的安装包(.deb/.AppImage/.dmg/.msi)与 CLI(dist-cli/pairdesk*);
+          # 只收集真正的安装包(.deb/.AppImage/.dmg/.msi)与 CLI(dist-cli/pairdesk*、dist-cli-musl/*)；
           # 若用 pairdesk-* 全匹配会误收 bundle 里 deb/AppImage 解压的中间文件(pairdesk-app.png、usr/bin/pairdesk-app)
-          CLI=$(find artifacts -type f -path '*/dist-cli/pairdesk*')
+          CLI=$(find artifacts -type f \( -path '*/dist-cli/pairdesk*' -o -path '*/dist-cli-musl/pairdesk*' \))
           PKG=$(find artifacts -type f \( -name '*.deb' -o -name '*.AppImage' -o -name '*.appimage' -o -name '*.dmg' -o -name '*.pkg' -o -name '*.msi' -o -name '*.rpm' \))
           FILES=$(printf '%s\n%s\n' "$CLI" "$PKG" | sort -u)
           echo "发布文件:"; echo "$FILES"
