@@ -98,6 +98,15 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           rustup target add x86_64-unknown-linux-musl
+          # cargo-zigbuild 交叉编译需要本机 zig 二进制作为 C 编译器/linker。
+          # 不用 ziglang install.sh(路径不定), 直接下载确定版本到固定目录并导出 ZIG_TARGET。
+          mkdir -p /tmp/zigset && cd /tmp/zigset
+          curl -fsSL -o zig.tar.xz https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz
+          tar xf zig.tar.xz
+          export PATH="/tmp/zigset/zig-linux-x86_64-0.13.0:$PATH"
+          zig version
+          # 回到仓库跟目录
+          cd "$GITHUB_WORKSPACE"
           pipx install cargo-zigbuild
           export PATH="$HOME/.local/bin:$PATH"
           cargo zigbuild --release --target x86_64-unknown-linux-musl -p pairdesk-core
