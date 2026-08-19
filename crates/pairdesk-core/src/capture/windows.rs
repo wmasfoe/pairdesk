@@ -6,13 +6,13 @@
 //! ⚠️ 真机约束：普通窗口会话即可截屏；若在锁屏/安全桌面(UAC)上画面为空属系统行为。
 
 use anyhow::{bail, Result};
-use windows::Win32::Foundation::{HWND, RECT};
+use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Gdi::{
-    BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits,
-    SelectObject, BITMAPINFO, BITMAPINFOHEADER, HBITMAP, HDC, SRCCOPY,
+    BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits,
+    ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, SRCCOPY,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetDC, GetSystemMetrics, ReleaseDC, SM_CXSCREEN, SM_CYSCREEN,
+    GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN,
 };
 
 use super::{CapturedFrame, ScreenCapturer};
@@ -38,24 +38,24 @@ impl ScreenCapturer for WinCapturer {
         let w = self.w as i32;
         let h = self.h as i32;
         unsafe {
-            let screen = GetDC(HWND(0)); // 0 = 全屏 DC
-            if screen.0 == 0 {
+            let screen = GetDC(HWND::default()); // NULL = 全屏 DC
+            if screen.is_invalid() {
                 bail!("GetDC 失败");
             }
             let mem = CreateCompatibleDC(screen);
-            if mem.0 == 0 {
-                let _ = ReleaseDC(HWND(0), screen);
+            if mem.is_invalid() {
+                let _ = ReleaseDC(HWND::default(), screen);
                 bail!("CreateCompatibleDC 失败");
             }
             let bmp = CreateCompatibleBitmap(screen, w, h);
-            if bmp.0 == 0 {
-                DeleteDC(mem);
-                let _ = ReleaseDC(HWND(0), screen);
+            if bmp.is_invalid() {
+                let _ = DeleteDC(mem);
+                let _ = ReleaseDC(HWND::default(), screen);
                 bail!("CreateCompatibleBitmap 失败");
             }
             let old = SelectObject(mem, bmp);
             // 全屏拷贝
-            BitBlt(mem, 0, 0, w, h, screen, 0, 0, SRCCOPY);
+            let _ = BitBlt(mem, 0, 0, w, h, screen, 0, 0, SRCCOPY);
 
             // 32bpp 像素（biHeight 为负 → 自上而下行序，与后续 RGB 行序一致）
             let mut bmi = BITMAPINFO {
@@ -78,14 +78,14 @@ impl ScreenCapturer for WinCapturer {
                 h as u32,
                 Some(px.as_mut_ptr() as *mut _),
                 &mut bmi,
-                0, // DIB_RGB_COLORS
+                DIB_RGB_COLORS,
             );
 
             // 还原并清理
             SelectObject(mem, old);
-            DeleteObject(bmp);
-            DeleteDC(mem);
-            let _ = ReleaseDC(HWND(0), screen);
+            let _ = DeleteObject(bmp);
+            let _ = DeleteDC(mem);
+            let _ = ReleaseDC(HWND::default(), screen);
 
             if copied == 0 {
                 bail!("GetDIBits 失败");

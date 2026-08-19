@@ -8,14 +8,16 @@
 
 use anyhow::{anyhow, Result};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_KEYUP,
-    MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN,
-    MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP,
-    MOUSEEVENTF_WHEEL, MOUSEINPUT, VK_BACK, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE,
-    VK_HOME, VK_LEFT, VK_LWIN, VK_MENU, VK_NEXT, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_SHIFT,
-    VK_SPACE, VK_TAB, VK_UP, WHEEL_DELTA,
+    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYBD_EVENT_FLAGS,
+    KEYEVENTF_KEYUP, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP,
+    MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN,
+    MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_WHEEL, MOUSEINPUT, VIRTUAL_KEY, VK_BACK, VK_CONTROL,
+    VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_HOME, VK_LEFT, VK_LWIN, VK_MENU, VK_NEXT,
+    VK_PRIOR, VK_RETURN, VK_RIGHT, VK_SHIFT, VK_SPACE, VK_TAB, VK_UP,
 };
-use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN, WHEEL_DELTA,
+};
 
 use super::{keysym, InputInjector};
 
@@ -87,7 +89,7 @@ impl InputInjector for WinInjector {
                 mi: MOUSEINPUT {
                     dx: 0,
                     dy: 0,
-                    mouseData: data,
+                    mouseData: data as u32,
                     dwFlags: MOUSEEVENTF_WHEEL,
                     time: 0,
                     dwExtraInfo: 0,
@@ -130,9 +132,9 @@ fn send_key(vk: u16, down: bool) {
         r#type: INPUT_KEYBOARD,
         Anonymous: INPUT_0 {
             ki: KEYBDINPUT {
-                wVk: vk,
+                wVk: VIRTUAL_KEY(vk),
                 wScan: 0,
-                dwFlags: if down { Default::default() } else { KEYEVENTF_KEYUP },
+                dwFlags: if down { KEYBD_EVENT_FLAGS(0) } else { KEYEVENTF_KEYUP },
                 time: 0,
                 dwExtraInfo: 0,
             },
@@ -185,9 +187,9 @@ fn vk_for_sym(sym: u32) -> Option<u16> {
         keysym::END => VK_END.0 as u16,
         keysym::PAGE_UP => VK_PRIOR.0 as u16,
         keysym::PAGE_DOWN => VK_NEXT.0 as u16,
-        keysym::SHIFT_L | keysym::SHIFT_R => VK_SHIFT.0 as u16,
-        keysym::CTRL_L | keysym::CTRL_R => VK_CONTROL.0 as u16,
-        keysym::ALT_L | keysym::ALT_R => VK_MENU.0 as u16,
+        keysym::SHIFT_L => VK_SHIFT.0 as u16,
+        keysym::CTRL_L => VK_CONTROL.0 as u16,
+        keysym::ALT_L => VK_MENU.0 as u16,
         keysym::META_L | keysym::SUPER_L => VK_LWIN.0 as u16,
         _ => return None,
     })
