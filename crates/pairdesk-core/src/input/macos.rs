@@ -8,10 +8,9 @@
 
 use anyhow::{bail, Result};
 use core_graphics::event::{
-    CGMouseButton, CGEvent, CGEventFlags, CGEventSourceStateID, CGEventTapLocation, CGEventType,
-    ScrollEventUnit,
+    CGMouseButton, CGEvent, CGEventFlags, CGEventTapLocation, CGEventType, ScrollEventUnit,
 };
-use core_graphics::event_source::CGEventSource;
+use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 use core_graphics::geometry::CGPoint;
 
 use super::{keysym, InputInjector};
