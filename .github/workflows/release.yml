@@ -71,10 +71,12 @@ jobs:
         shell: bash
 
       # ---- Tauri bundle（打包成各平台安装包）----
+      # 必须在 tauri 项目目录(crates/pairdesk-app,含 tauri.conf.json+Cargo.toml)跑;
+      # tauri-cli 从 CWD 识别项目(在 app/ 会 panic "Couldn't recognize current folder")。
       - name: Tauri bundle
         run: |
-          cd app
-          pnpm exec tauri build --config ../crates/pairdesk-app/tauri.conf.json
+          cd crates/pairdesk-app
+          pnpm exec tauri build
         shell: bash
 
       # ---- 收集产物 ----

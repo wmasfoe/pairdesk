@@ -9,6 +9,7 @@
     "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
     "playwright": "^1.62.1",
     "typescript": "^5.5.0"
   }
