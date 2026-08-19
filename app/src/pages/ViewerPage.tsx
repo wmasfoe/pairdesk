@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { useSession, type SessionPhase } from '../state/useSession';
 import { VideoView } from '../components/VideoView';
 import type { StatusTone } from '@pairdesk/ui-kit';
+import { DEFAULT_RELAY } from '../constants';
 
 const TONE: Record<SessionPhase, StatusTone> = {
   idle: 'idle',
@@ -20,7 +21,7 @@ const TONE: Record<SessionPhase, StatusTone> = {
 
 export function ViewerPage({ onBack }: { onBack: () => void }) {
   const session = useSession();
-  const [relay, setRelay] = useState('127.0.0.1:8977');
+  const [relay, setRelay] = useState(DEFAULT_RELAY);
   const [sid, setSid] = useState('');
   const [password, setPassword] = useState('');
   const connected = session.phase === 'connected' || session.phase === 'authenticated';
@@ -40,7 +41,12 @@ export function ViewerPage({ onBack }: { onBack: () => void }) {
         <div className="pd-viewer-form">
           <TextField label="对方会话码" value={sid} onChange={setSid} placeholder="如 pd-AB12C34" />
           <TextField label="连接密码" value={password} onChange={setPassword} placeholder="一次性密码" type="password" />
-          <TextField label="中继/VPS 地址" value={relay} onChange={setRelay} placeholder="127.0.0.1:8977" />
+          <details className="pd-advanced">
+            <summary>高级设置</summary>
+            <div className="pd-advanced__body">
+              <TextField label="中继/VPS 地址" value={relay} onChange={setRelay} placeholder={DEFAULT_RELAY} />
+            </div>
+          </details>
           <Button variant="primary" disabled={!sid || !password} onClick={() => session.connectAuto(relay, sid, password)}>
             {busy ? '连接中…' : '连接'}
           </Button>

@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { getCoreBridge } from '../bridge';
 import { useSession, type SessionPhase } from '../state/useSession';
 import type { StatusTone } from '@pairdesk/ui-kit';
+import { DEFAULT_HOLE_PORT, DEFAULT_RELAY } from '../constants';
 
 const TONE: Record<SessionPhase, StatusTone> = {
   idle: 'idle',
@@ -30,9 +31,9 @@ function genSid(): string {
 
 export function HostPage({ onBack }: { onBack: () => void }) {
   const session = useSession();
-  const [relay, setRelay] = useState('127.0.0.1:8977');
+  const [relay, setRelay] = useState(DEFAULT_RELAY);
   const [sid, setSid] = useState(() => genSid());
-  const [holePort, setHolePort] = useState('8889');
+  const [holePort, setHolePort] = useState(DEFAULT_HOLE_PORT);
   const [password, setPassword] = useState(() => genPwd());
   const [allowed, setAllowed] = useState(false);
   const active = session.phase === 'connected' || session.phase === 'authenticated';
@@ -58,12 +59,17 @@ export function HostPage({ onBack }: { onBack: () => void }) {
             <TextField label="会话码（给对方看）" value={sid} onChange={setSid} />
             <Button variant="ghost" onClick={() => setSid(genSid())}>换一个</Button>
           </div>
-          <TextField label="中继/VPS 地址" value={relay} onChange={setRelay} placeholder="127.0.0.1:8977" />
-          <TextField label="打洞端口" value={holePort} onChange={setHolePort} inputMode="numeric" />
           <div className="pd-password">
             <TextField label="连接密码" value={password} onChange={setPassword} />
             <Button variant="ghost" onClick={() => setPassword(genPwd())}>换一个</Button>
           </div>
+          <details className="pd-advanced">
+            <summary>高级设置</summary>
+            <div className="pd-advanced__body">
+              <TextField label="中继/VPS 地址" value={relay} onChange={setRelay} placeholder={DEFAULT_RELAY} />
+              <TextField label="打洞端口" value={holePort} onChange={setHolePort} inputMode="numeric" />
+            </div>
+          </details>
           <label className="pd-switch">
             <input type="checkbox" checked={allowed} onChange={(e) => toggleAllowed(e.target.checked)} />
             允许远程控制（关闭时即使有码也无法连接）
