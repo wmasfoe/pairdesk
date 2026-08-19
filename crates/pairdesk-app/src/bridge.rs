@@ -8,13 +8,17 @@
 //!  - `pd_send_input`     控制端注入输入
 //!
 //! 事件：内核 `CoreEvent` 统一以 `core://event` 推给前端。
+//!
+//! 自测模式：App 以 `PD_ROLE=host|viewer` 等环境变量启动时，不经 UI 直接起会话，
+//! 并把控制端收到的画面帧写盘（`PD_DUMP_DIR`），用于无头验证"壳 + 内核"全链路。
 
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use serde::Deserialize;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use pairdesk_core::protocol::InputMsg;
 use pairdesk_core::{CoreEvent, CoreHandle, Quality};
@@ -25,6 +29,8 @@ pub struct AppState {
     pub handle: Mutex<Option<CoreHandle>>,
     /// 允许远程控制总开关（默认关，需用户手动打开）
     pub allowed: AtomicBool,
+    /// 画面帧落盘目录（自测用；None 则只发事件不写盘）
+    pub dump: Mutex<Option<PathBuf>>,
 }
 
 impl Default for AppState {
@@ -32,6 +38,7 @@ impl Default for AppState {
         Self {
             handle: Mutex::new(None),
             allowed: AtomicBool::new(false),
+            dump: Mutex::new(None),
         }
     }
 }
@@ -46,29 +53,39 @@ pub fn pd_set_allowed(state: State<'_, AppState>, allowed: bool) {
     state.allowed.store(allowed, Ordering::SeqCst);
 }
 
-/// 启动一个会话（被控/控制端都走这里）：存句柄 + 起事件转发线程。
+/// 事件泵：内核事件 → 前端事件流；可选的画面帧落盘（自测）。
+pub fn pump_events(app: &AppHandle, rx: std::sync::mpsc::Receiver<CoreEvent>, dump: Option<PathBuf>) {
+    let app = app.clone();
+    std::thread::Builder::new()
+        .name("pd-event-fwd".into())
+        .spawn(move || {
+            let mut n = 0u32;
+            while let Ok(ev) = rx.recv() {
+                if let Some(dir) = &dump {
+                    if let CoreEvent::ScreenFrame(jpeg) = &ev {
+                        let _ = std::fs::write(dir.join(format!("frame-{:04}.jpg", n + 1)), jpeg);
+                        n += 1;
+                    }
+                }
+                let _ = app.emit("core://event", core_event_to_json(&ev));
+            }
+        })
+        .expect("spawn event forwarder");
+}
+
+/// 启动一个会话：存句柄 + 起事件转发线程。
 fn start_session(
     state: &AppState,
     app: &AppHandle,
     handle: CoreHandle,
     rx: std::sync::mpsc::Receiver<CoreEvent>,
 ) -> Result<(), String> {
-    // 若已有会话，先停旧的
     if let Some(old) = state.handle.lock().unwrap().take() {
         old.stop();
     }
     *state.handle.lock().unwrap() = Some(handle);
-    // 事件泵：内核事件 → 前端
-    let app = app.clone();
-    std::thread::Builder::new()
-        .name("pd-event-fwd".into())
-        .spawn(move || {
-            while let Ok(ev) = rx.recv() {
-                let payload = core_event_to_json(&ev);
-                let _ = app.emit("core://event", payload);
-            }
-        })
-        .map_err(|e| e.to_string())?;
+    let dump = state.dump.lock().unwrap().clone();
+    pump_events(app, rx, dump);
     Ok(())
 }
 
@@ -132,6 +149,55 @@ pub fn pd_send_input(state: State<'_, AppState>, msg: InputCmd) {
                 mods,
             }),
         }
+    }
+}
+
+// ---------- 自测模式（无头验证"壳 + 内核"全链路） ----------
+
+/// 自测：设置画面帧落盘目录。
+pub fn selftest_set_dump(app: &AppHandle, dir: PathBuf) {
+    *app.state::<AppState>().dump.lock().unwrap() = Some(dir);
+}
+
+/// 自测：起被控端（绕过 UI 允许开关，代表用户已允许）。
+pub fn selftest_host(
+    app: &AppHandle,
+    relay: SocketAddr,
+    sid: String,
+    hole: u16,
+    password: String,
+) {
+    let state = app.state::<AppState>();
+    state.allowed.store(true, Ordering::SeqCst);
+    let dump = state.dump.lock().unwrap().clone();
+    if let Some(old) = state.handle.lock().unwrap().take() {
+        old.stop();
+    }
+    match CoreHandle::start_host_auto(relay, sid.clone(), hole, password) {
+        Ok((h, rx)) => {
+            h.set_quality(Quality { jpeg: 80, fps: 20 });
+            *state.handle.lock().unwrap() = Some(h);
+            pump_events(app, rx, dump);
+            eprintln!("[selftest] 被控端已启动 sid={sid}");
+        }
+        Err(e) => eprintln!("[selftest-host] 失败: {e}"),
+    }
+}
+
+/// 自测：起控制端（自动择一）。
+pub fn selftest_viewer(app: &AppHandle, relay: SocketAddr, sid: String, password: String) {
+    let state = app.state::<AppState>();
+    let dump = state.dump.lock().unwrap().clone();
+    if let Some(old) = state.handle.lock().unwrap().take() {
+        old.stop();
+    }
+    match CoreHandle::connect_auto(relay, sid.clone(), password) {
+        Ok((h, rx)) => {
+            *state.handle.lock().unwrap() = Some(h);
+            pump_events(app, rx, dump);
+            eprintln!("[selftest] 控制端已启动 sid={sid}");
+        }
+        Err(e) => eprintln!("[selftest-viewer] 失败: {e}"),
     }
 }
 
