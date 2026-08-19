@@ -25,5 +25,14 @@ x11rb = { version = "0.13", features = ["xtest"] }
 core-foundation = "0.9"
 core-graphics = { version = "0.24", features = ["highsierra"] }
 
+# Windows 采集(GDI BitBlt) + 注入(SendInput)
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.58", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
 [dev-dependencies]
 zune-jpeg = "0.4"
