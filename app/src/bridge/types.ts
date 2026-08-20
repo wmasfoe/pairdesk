@@ -16,6 +16,7 @@ export type CoreEvent =
   | { type: 'peerDisconnected' }
   | { type: 'authResult'; ok: boolean; reason?: string } // 认证结果
   | { type: 'error'; message: string }
+  | { type: 'notice'; message: string } // 非致命提示（如打洞端口顺延）
   | { type: 'stats'; fps: number; kbps: number; pingMs: number }
   | { type: 'transport'; path: string } // 自动择一选中的传输路径
   | { type: 'signalHole'; addr: string }; // 信令打洞端点

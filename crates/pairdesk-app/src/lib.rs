@@ -40,7 +40,7 @@ fn selftest_from_env(app: &tauri::AppHandle) {
     }
     match role.as_str() {
         "host" => {
-            let hole = env::var("PD_HOLE").ok().and_then(|v| v.parse().ok()).unwrap_or(8889);
+            let hole = env::var("PD_HOLE").ok().and_then(|v| v.parse().ok()).unwrap_or(23517);
             bridge::selftest_host(app, relay, sid, hole, pwd);
         }
         "viewer" => bridge::selftest_viewer(app, relay, sid, pwd),

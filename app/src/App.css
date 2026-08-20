@@ -60,6 +60,7 @@
 }
 .pd-hint { font-size: 0.8125rem; color: var(--pd-fg-muted); }
 .pd-error { color: var(--pd-status-error); font-size: 0.875rem; }
+.pd-notice { color: var(--pd-primary); font-size: 0.8125rem; background: rgba(13,148,136,0.08); border-radius: 0.75rem; padding: 0.5rem 0.75rem; }
 
 /* 「允许远程控制」开关行 */
 .pd-switch {

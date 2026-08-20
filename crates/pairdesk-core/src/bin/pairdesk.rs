@@ -91,8 +91,8 @@ fn run_host(args: &[String]) -> anyhow::Result<()> {
         .get("relay")
         .map(|s| s.parse::<std::net::SocketAddr>().map_err(|e| anyhow::anyhow!(e)));
     let sid_opt = a.get("sid").cloned();
-    // 打洞 QUIC 端口（被控端用它接收异网直连；可选，默认 8889）
-    let hole_port: u16 = a.get("hole-port").and_then(|v| v.parse().ok()).unwrap_or(8889);
+    // 打洞 QUIC 端口（被控端用它接收异网直连；可选，默认 23517）
+    let hole_port: u16 = a.get("hole-port").and_then(|v| v.parse().ok()).unwrap_or(23517);
 
     // 自动就绪模式：serve --relay --sid --auto（同起 QUIC 打洞 + 中继兜底）
     if a.contains_key("auto") {

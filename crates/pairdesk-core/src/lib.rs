@@ -29,6 +29,8 @@ pub enum CoreEvent {
     PeerDisconnected,
     /// 认证结果
     AuthResult { ok: bool, reason: Option<String> },
+    /// 非致命提示（如打洞端口被占自动顺延），前端以提示样式展示
+    Notice(String),
     /// 运行统计（帧率/码率/延迟）
     Stats { fps: u32, kbps: u32, ping_ms: u32 },
     /// 错误（网络/采集等）

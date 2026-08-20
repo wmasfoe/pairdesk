@@ -77,10 +77,11 @@ export function HostPage({ onBack }: { onBack: () => void }) {
           <Button
             variant="primary"
             disabled={!allowed || !sid || !password}
-            onClick={() => session.startHostAuto(relay, sid, Number(holePort) || 8889, password)}
+            onClick={() => session.startHostAuto(relay, sid, Number(holePort) || 23517, password)}
           >
             开始接收协助
           </Button>
+          {session.notice && <p className="pd-notice">{session.notice}</p>}
           {session.error && <p className="pd-error">{session.error}</p>}
         </div>
       ) : (

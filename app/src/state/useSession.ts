@@ -21,6 +21,8 @@ export interface SessionState {
   phase: SessionPhase;
   screen: { w: number; h: number } | null;
   error: string | null;
+  /** 非致命提示（如打洞端口被占自动顺延） */
+  notice: string | null;
   /** 自动择一选中的传输路径（如 QUIC 打洞直连 / 中继兜底） */
   transport: string | null;
 }
@@ -40,6 +42,7 @@ export function useSession(): SessionState & SessionControls {
     phase: 'idle',
     screen: null,
     error: null,
+    notice: null,
     transport: null,
   });
 
@@ -68,6 +71,9 @@ export function useSession(): SessionState & SessionControls {
         case 'error':
           setState((s) => ({ ...s, phase: 'error', error: e.message }));
           break;
+        case 'notice':
+          setState((s) => ({ ...s, notice: e.message }));
+          break;
         default:
           break; // frame/stats 由画面组件单独订阅
       }
@@ -76,7 +82,7 @@ export function useSession(): SessionState & SessionControls {
 
   const startHostAuto = useCallback(
     (relay: string, sid: string, holePort: number, password: string) => {
-      setState({ phase: 'authentication', screen: null, error: null, transport: null });
+      setState({ phase: 'authentication', screen: null, error: null, notice: null, transport: null });
       void bridgeRef.current.startHostAuto({ relay, sid, holePort, password });
     },
     [],

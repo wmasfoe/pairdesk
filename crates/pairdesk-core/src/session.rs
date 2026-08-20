@@ -205,6 +205,17 @@ fn identity_dir() -> std::path::PathBuf {
 
 // ---------- 自动择一（用户只给 relay+sid+密码，系统无感择优） ----------
 
+/// 从 start 起找空闲 UDP 端口（探测后立即释放，最多顺延 20 个）。
+/// 全部被占则返回 start（后续绑定会如实报错，由调用方兜底提示）。
+pub fn find_free_udp_port(start: u16) -> u16 {
+    for p in start..start.saturating_add(20) {
+        if std::net::UdpSocket::bind(("0.0.0.0", p)).is_ok() {
+            return p; // 探测 socket 随作用域释放，极短竞态窗口可接受
+        }
+    }
+    start
+}
+
 /// 被控端自动就绪：同时起 QUIC 打洞 server + 中继注册，任一被连即成为会话。
 /// 返回主句柄(命令广播到各路子会话)与聚合事件流。
 pub fn spawn_host_auto(
@@ -214,6 +225,15 @@ pub fn spawn_host_auto(
     password: String,
 ) -> Result<(crate::CoreHandle, Receiver<CoreEvent>)> {
     let (event_tx, event_rx) = channel();
+    // 端口被占时自动顺延找空闲端口：QUIC 打洞与中继注册用同一实际端口，
+    // 保证"打洞失败 → 中继兜底"不因端口冲突而连环出错。
+    let port = find_free_udp_port(hole_port);
+    if port != hole_port {
+        let _ = event_tx.send(CoreEvent::Notice(format!(
+            "打洞端口 {} 被占用，已自动改用 {}（中继兜底不受影响）",
+            hole_port, port
+        )));
+    }
     let (cmd_tx, cmd_rx) = channel();
     let cmd_rx = Arc::new(Mutex::new(cmd_rx));
     let h = crate::CoreHandle::from_tx(cmd_tx);
@@ -685,5 +705,27 @@ impl HandshakeMsg for HelloAckMsg {
 impl HandshakeMsg for AuthMsg {
     fn decode(b: &[u8]) -> Result<Self> {
         AuthMsg::decode(b)
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn find_free_udp_port_顺延到空闲端口() {
+        // 占住 start 端口，顺延应返回 start+1
+        let s = std::net::UdpSocket::bind(("0.0.0.0", 0)).unwrap();
+        let start = s.local_addr().unwrap().port();
+        let got = find_free_udp_port(start);
+        assert_eq!(got, start + 1, "被占端口应顺延 +1");
+    }
+
+    #[test]
+    fn find_free_udp_port_空闲端口直接返回() {
+        let s = std::net::UdpSocket::bind(("0.0.0.0", 0)).unwrap();
+        let free = s.local_addr().unwrap().port();
+        drop(s); // 释放后应直接命中
+        let got = find_free_udp_port(free);
+        assert_eq!(got, free);
     }
 }

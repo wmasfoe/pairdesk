@@ -221,6 +221,7 @@ fn core_event_to_json(ev: &CoreEvent) -> serde_json::Value {
             json!({ "type": "stats", "fps": fps, "kbps": kbps, "pingMs": ping_ms })
         }
         CoreEvent::Error(e) => json!({ "type": "error", "message": e }),
+        CoreEvent::Notice(msg) => json!({ "type": "notice", "message": msg }),
         CoreEvent::PeerConnected => json!({ "type": "peerConnected" }),
         CoreEvent::PeerDisconnected => json!({ "type": "peerDisconnected" }),
         CoreEvent::AuthResult { ok, reason } => {
