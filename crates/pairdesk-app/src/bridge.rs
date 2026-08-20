@@ -224,6 +224,97 @@ pub fn pd_open_permission_settings(permission_type: String) {
     pairdesk_core::permissions::open_permission_settings(&permission_type);
 }
 
+/// 检查更新信息
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct UpdateInfo {
+    pub current_version: String,
+    pub latest_version: String,
+    pub has_update: bool,
+    pub release_notes: String,
+    pub download_url: String,
+}
+
+/// 检查是否有新版本（请求 GitHub Releases API）
+#[tauri::command]
+pub async fn pd_check_update() -> Result<UpdateInfo, String> {
+    let current_version = env!("CARGO_PKG_VERSION").to_string();
+    let url = "https://api.github.com/repos/wmasfoe/pairdesk/releases/latest";
+    let client = reqwest::Client::builder()
+        .user_agent("PairDesk-App")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let res = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("检查更新失败: {e}"))?;
+
+    if !res.status().is_success() {
+        return Err(format!("GitHub API 返回状态码: {}", res.status()));
+    }
+
+    let json: serde_json::Value = res
+        .json()
+        .await
+        .map_err(|e| format!("解析更新响应失败: {e}"))?;
+
+    let tag_name = json["tag_name"]
+        .as_str()
+        .unwrap_or("")
+        .trim_start_matches('v')
+        .to_string();
+    let release_notes = json["body"].as_str().unwrap_or("").to_string();
+
+    let has_update = !tag_name.is_empty() && tag_name != current_version;
+
+    // 匹配当前平台下载资产
+    let target_pattern = if cfg!(target_os = "macos") {
+        if cfg!(target_arch = "aarch64") {
+            "aarch64.dmg"
+        } else {
+            "x86_64.dmg"
+        }
+    } else if cfg!(target_os = "windows") {
+        ".msi"
+    } else {
+        ".AppImage"
+    };
+
+    let download_url = json["assets"]
+        .as_array()
+        .and_then(|assets| {
+            assets.iter().find_map(|a| {
+                let name = a["name"].as_str().unwrap_or("");
+                if name.contains(target_pattern) {
+                    a["browser_download_url"].as_str().map(|s| s.to_string())
+                } else {
+                    None
+                }
+            })
+        })
+        .unwrap_or_else(|| json["html_url"].as_str().unwrap_or("").to_string());
+
+    Ok(UpdateInfo {
+        current_version,
+        latest_version: tag_name,
+        has_update,
+        release_notes,
+        download_url,
+    })
+}
+
+/// 打开系统默认浏览器访问下载/发布页
+#[tauri::command]
+pub fn pd_open_url(url: String) {
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open").arg(&url).spawn();
+    #[cfg(target_os = "windows")]
+    let _ = std::process::Command::new("cmd").args(["/C", "start", &url]).spawn();
+    #[cfg(target_os = "linux")]
+    let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+}
+
 /// 重启应用：macOS 的 TCC 权限结果按进程缓存（AXIsProcessTrusted /
 /// CGPreflightScreenCaptureAccess 一旦在本进程读到 false 就持续返回 false），
 /// 授权后必须用全新进程重新查询 tccd 才能读到新状态。

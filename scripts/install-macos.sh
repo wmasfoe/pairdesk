@@ -46,7 +46,10 @@ trap 'hdiutil detach "$MOUNT" -quiet 2>/dev/null || true; rm -f "$DMG_FILE"' EXI
 rm -rf "/Applications/${APP_NAME}.app"
 cp -R "${MOUNT}/${APP_NAME}.app" /Applications/
 
-echo "==> [4/5] 解除隔离（未签名应用打开不再报"已损坏"）"
+echo "==> [4/5] 保持签名/权限完整性与解除隔离"
+# 重新签署 ad-hoc 签名以保证 macOS TCC (隐私权限) 数据库基于稳定的代码签名绑定，避免重新安装后权限失效
+codesign --force --deep --sign - "/Applications/${APP_NAME}.app" 2>/dev/null || true
+# 解除隔离（未签名应用打开不再报"已损坏"）
 xattr -dr com.apple.quarantine "/Applications/${APP_NAME}.app" 2>/dev/null || true
 
 echo "==> [5/5] 清理"

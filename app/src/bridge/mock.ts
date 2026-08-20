@@ -52,6 +52,18 @@ export function createMockBridge(): CoreBridge {
     async openPermissionSettings() {
       // mock 忽略
     },
+    async checkUpdate() {
+      return {
+        currentVersion: '0.1.16',
+        latestVersion: '0.1.16',
+        hasUpdate: false,
+        releaseNotes: '当前已是最新版本',
+        downloadUrl: 'https://github.com/wmasfoe/pairdesk/releases/latest',
+      };
+    },
+    async openUrl(url) {
+      window.open(url, '_blank');
+    },
     restartApp() {
       // mock 忽略
     },

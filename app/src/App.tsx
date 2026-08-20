@@ -5,6 +5,7 @@
  * 模式切换用简单 state（首版单用户单界面，不引入路由库）。
  */
 import { useState } from 'react';
+import { getCoreBridge } from './bridge';
 import { HostPage } from './pages/HostPage';
 import { ViewerPage } from './pages/ViewerPage';
 import { usePermissions } from './state/usePermissions';
@@ -16,7 +17,29 @@ type Mode = null | 'host' | 'viewer';
 
 export default function App() {
   const [mode, setMode] = useState<Mode>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateMsg, setUpdateMsg] = useState<string | null>(null);
   const perms = usePermissions();
+
+  const handleCheckUpdate = async () => {
+    setCheckingUpdate(true);
+    setUpdateMsg(null);
+    try {
+      const info = await getCoreBridge().checkUpdate();
+      if (info.hasUpdate) {
+        setUpdateMsg(`发现新版本 v${info.latestVersion}！`);
+        if (window.confirm(`发现新版本 v${info.latestVersion} (当前 v${info.currentVersion})，是否前往下载？`)) {
+          await getCoreBridge().openUrl(info.downloadUrl);
+        }
+      } else {
+        setUpdateMsg(`当前已是最新版本 (v${info.currentVersion})`);
+      }
+    } catch (e: any) {
+      setUpdateMsg(`检查更新失败: ${e?.message ?? e}`);
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
 
   if (mode === 'host') return <HostPage onBack={() => setMode(null)} />;
   if (mode === 'viewer') return <ViewerPage onBack={() => setMode(null)} />;
@@ -56,6 +79,19 @@ export default function App() {
           <span className="font-display text-base font-semibold tracking-tight text-pd-fg">控制端</span>
           <span className="mt-1 text-[13px] leading-snug text-pd-muted">输入会话码，远程操作另一台电脑</span>
         </button>
+      </div>
+
+      <div className="mt-12 flex flex-col items-center gap-2">
+        <button
+          onClick={handleCheckUpdate}
+          disabled={checkingUpdate}
+          className="text-[12px] text-pd-muted transition hover:text-pd-fg underline underline-offset-4 disabled:opacity-50"
+        >
+          {checkingUpdate ? '正在检查更新…' : '检查更新 ↗'}
+        </button>
+        {updateMsg && (
+          <p className="m-0 text-[12px] text-pd-primary">{updateMsg}</p>
+        )}
       </div>
     </div>
   );

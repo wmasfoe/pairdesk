@@ -13,6 +13,47 @@ interface VideoViewProps {
   aspect?: { w: number; h: number };
 }
 
+/** 将浏览器 KeyboardEvent.code / key 转换为 PairDesk 后端协议期望的 X11 keysym */
+function keyToSym(code: string, key: string): number {
+  // 1. 常见功能/导航键 (X11 keysym)
+  switch (code) {
+    case 'Backspace': return 0xff08;
+    case 'Tab': return 0xff09;
+    case 'Enter':
+    case 'NumpadEnter': return 0xff0d;
+    case 'Escape': return 0xff1b;
+    case 'Delete': return 0xffff;
+    case 'ArrowLeft': return 0xff51;
+    case 'ArrowUp': return 0xff52;
+    case 'ArrowRight': return 0xff53;
+    case 'ArrowDown': return 0xff54;
+    case 'Home': return 0xff50;
+    case 'End': return 0xff57;
+    case 'PageUp': return 0xff55;
+    case 'PageDown': return 0xff56;
+    case 'ShiftLeft':
+    case 'ShiftRight': return 0xffe1;
+    case 'ControlLeft':
+    case 'ControlRight': return 0xffe3;
+    case 'AltLeft':
+    case 'AltRight': return 0xffe9;
+    case 'MetaLeft':
+    case 'MetaRight': return 0xffe7;
+    case 'Space': return 0x20;
+  }
+
+  // 2. 单字符 ASCII (直接取 unicode 码点)
+  if (key.length === 1) {
+    const codePoint = key.charCodeAt(0);
+    if (codePoint >= 32 && codePoint <= 126) {
+      return codePoint;
+    }
+  }
+
+  // 3. 其他非 ASCII 字符或 IME 组合中过程键，返回 0 忽略，避免产生脏键码破坏接收端
+  return 0;
+}
+
 export function VideoView({ aspect }: VideoViewProps) {
   const [src, setSrc] = useState<string | null>(null);
   const urlRef = useRef<string | null>(null);
@@ -110,6 +151,8 @@ export function VideoView({ aspect }: VideoViewProps) {
 
   const handleKeyDown = (e: KeyboardEvent) => {
     e.preventDefault();
+    const sym = keyToSym(e.code, e.key);
+    if (sym === 0) return; // 无法映射的键（IME 组合等）跳过，不发送
     let mods = 0;
     if (e.shiftKey) mods |= 1;
     if (e.ctrlKey) mods |= 2;
@@ -117,7 +160,7 @@ export function VideoView({ aspect }: VideoViewProps) {
     if (e.metaKey) mods |= 8;
     getCoreBridge().sendInput({
       kind: 'key',
-      keycode: e.keyCode,
+      keycode: sym,
       down: true,
       mods,
     });
@@ -125,6 +168,8 @@ export function VideoView({ aspect }: VideoViewProps) {
 
   const handleKeyUp = (e: KeyboardEvent) => {
     e.preventDefault();
+    const sym = keyToSym(e.code, e.key);
+    if (sym === 0) return;
     let mods = 0;
     if (e.shiftKey) mods |= 1;
     if (e.ctrlKey) mods |= 2;
@@ -132,7 +177,7 @@ export function VideoView({ aspect }: VideoViewProps) {
     if (e.metaKey) mods |= 8;
     getCoreBridge().sendInput({
       kind: 'key',
-      keycode: e.keyCode,
+      keycode: sym,
       down: false,
       mods,
     });

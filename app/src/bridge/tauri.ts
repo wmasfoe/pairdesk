@@ -57,6 +57,25 @@ export function createTauriBridge(): CoreBridge {
     async openPermissionSettings(type) {
       await invoke('pd_open_permission_settings', { permissionType: type });
     },
+    async checkUpdate() {
+      const res = await invoke<{
+        current_version: string;
+        latest_version: string;
+        has_update: boolean;
+        release_notes: string;
+        download_url: string;
+      }>('pd_check_update');
+      return {
+        currentVersion: res.current_version,
+        latestVersion: res.latest_version,
+        hasUpdate: res.has_update,
+        releaseNotes: res.release_notes,
+        downloadUrl: res.download_url,
+      };
+    },
+    async openUrl(url) {
+      await invoke('pd_open_url', { url });
+    },
     restartApp() {
       void invoke('pd_restart_app');
     },

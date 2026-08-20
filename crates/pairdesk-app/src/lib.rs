@@ -62,6 +62,8 @@ pub fn run() {
             bridge::pd_check_permissions,
             bridge::pd_request_permission,
             bridge::pd_open_permission_settings,
+            bridge::pd_check_update,
+            bridge::pd_open_url,
             bridge::pd_restart_app
         ])
         .setup(|app| {

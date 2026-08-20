@@ -71,6 +71,7 @@ pub fn spawn_viewer(
 // ---------- 中继模式（经 pairdesk-relay 建立连接） ----------
 
 /// 被控端经中继登记：连 relay → 注册 sid(+打洞端口) → 等 viewer，随后走单会话。
+/// 会话结束后自动重新注册继续等待下一个 viewer（被控端常驻），收到 Stop 才退出。
 pub fn spawn_host_via_relay(
     relay: SocketAddr,
     sid: String,
@@ -84,16 +85,33 @@ pub fn spawn_host_via_relay(
     thread::Builder::new()
         .name("pairdesk-host-relay".into())
         .spawn(move || {
-            let result = (|| -> Result<()> {
-                eprintln!("[host-relay] 正在向中继注册: relay={}, sid={}, hole_port={}", relay, sid, hole_port);
-                let conn = relay::register_host(relay, &sid, hole_port)?;
-                eprintln!("[host-relay] 中继注册成功，等待控制端连入…");
-                let _ = host_session_once(conn, &password, &event_tx, &cmd_rx);
-                Ok(())
-            })();
-            if let Err(e) = result {
-                eprintln!("[host-relay] 出现错误: {}", e);
-                let _ = event_tx.send(CoreEvent::Error(format!("中继被控端: {}", e)));
+            loop {
+                // 检查是否收到停止命令（会话间隙顺手消费）
+                if let Ok(ControlCommand::Stop) = cmd_rx.lock().unwrap().try_recv() {
+                    eprintln!("[host-relay] 收到停止命令，退出常驻循环");
+                    break;
+                }
+                let result = (|| -> Result<()> {
+                    eprintln!("[host-relay] 正在向中继注册: relay={}, sid={}, hole_port={}", relay, sid, hole_port);
+                    let conn = relay::register_host(relay, &sid, hole_port)?;
+                    eprintln!("[host-relay] 中继注册成功，等待控制端连入…");
+                    let _ = host_session_once(conn, &password, &event_tx, &cmd_rx);
+                    // 会话结束：正常返回继续等待下一个 viewer
+                    Ok(())
+                })();
+                match result {
+                    Ok(()) => {
+                        eprintln!("[host-relay] 会话结束，重新注册等待下一个 viewer…");
+                        continue;
+                    }
+                    Err(e) => {
+                        eprintln!("[host-relay] 出现错误: {}", e);
+                        let _ = event_tx.send(CoreEvent::Error(format!("中继被控端: {}", e)));
+                        // 网络错误时稍作退避再重试注册（避免死循环打爆 relay）
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                        continue;
+                    }
+                }
             }
         })?;
     Ok((h, event_rx))
@@ -130,6 +148,7 @@ pub fn spawn_viewer_via_relay(
 // ---------- QUIC 直连（异网打洞后的 P2P 传输） ----------
 
 /// 被控端 QUIC 直连：在 hole_port 起 QUIC server，等 viewer 连接后跑会话。
+/// 会话结束后自动重新进入 accept 状态等待下一个连接（常驻保活）。
 pub fn spawn_host_via_quic(
     hole_port: u16,
     password: String,
@@ -141,32 +160,46 @@ pub fn spawn_host_via_quic(
     thread::Builder::new()
         .name("pairdesk-host-quic".into())
         .spawn(move || {
-            let result = (|| -> Result<()> {
-                eprintln!("[host-quic] 正在启动 QUIC Server, 监听端口: {}", hole_port);
-                let id = crate::certs::ensure_identity(&identity_dir())?;
-                let rt = Arc::new(tokio::runtime::Runtime::new()?);
-                let (send, recv) = rt.block_on(async move {
-                    let server = quinn::Endpoint::server(
-                        crate::certs::server_quic_config(&id)?,
-                        (std::net::Ipv4Addr::UNSPECIFIED, hole_port).into(),
-                    )?;
-                    eprintln!("[host-quic] QUIC Server 监听就绪, 等待连接…");
-                    let inc = server
-                        .accept()
-                        .await
-                        .ok_or_else(|| anyhow::anyhow!("QUIC server 关闭"))?;
-                    let conn = inc.await?;
-                    eprintln!("[host-quic] 收到对端 QUIC 连接, 打开双向流…");
-                    conn.accept_bi().await.map_err(anyhow::Error::from)
-                })?;
-                eprintln!("[host-quic] QUIC 帧流已建立, 开始会话握手…");
-                let fs = crate::quic_frame::QuicFrameStream::new(rt, send, recv);
-                let _ = host_session_once(fs, &password, &event_tx, &cmd_rx);
-                Ok(())
-            })();
-            if let Err(e) = result {
-                eprintln!("[host-quic] 出现错误: {}", e);
-                let _ = event_tx.send(CoreEvent::Error(format!("QUIC 被控端: {}", e)));
+            loop {
+                if let Ok(ControlCommand::Stop) = cmd_rx.lock().unwrap().try_recv() {
+                    eprintln!("[host-quic] 收到停止命令，退出 QUIC 常驻循环");
+                    break;
+                }
+                let result = (|| -> Result<()> {
+                    eprintln!("[host-quic] 正在启动 QUIC Server, 监听端口: {}", hole_port);
+                    let id = crate::certs::ensure_identity(&identity_dir())?;
+                    let rt = Arc::new(tokio::runtime::Runtime::new()?);
+                    let (send, recv) = rt.block_on(async move {
+                        let server = quinn::Endpoint::server(
+                            crate::certs::server_quic_config(&id)?,
+                            (std::net::Ipv4Addr::UNSPECIFIED, hole_port).into(),
+                        )?;
+                        eprintln!("[host-quic] QUIC Server 监听就绪, 等待连接…");
+                        let inc = server
+                            .accept()
+                            .await
+                            .ok_or_else(|| anyhow::anyhow!("QUIC server 关闭"))?;
+                        let conn = inc.await?;
+                        eprintln!("[host-quic] 收到对端 QUIC 连接, 打开双向流…");
+                        conn.accept_bi().await.map_err(anyhow::Error::from)
+                    })?;
+                    eprintln!("[host-quic] QUIC 帧流已建立, 开始会话握手…");
+                    let fs = crate::quic_frame::QuicFrameStream::new(rt, send, recv);
+                    let _ = host_session_once(fs, &password, &event_tx, &cmd_rx);
+                    Ok(())
+                })();
+                match result {
+                    Ok(()) => {
+                        eprintln!("[host-quic] 会话结束，重新等待下一个 QUIC 连接…");
+                        continue;
+                    }
+                    Err(e) => {
+                        eprintln!("[host-quic] 出现错误: {}", e);
+                        let _ = event_tx.send(CoreEvent::Error(format!("QUIC 被控端: {}", e)));
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                        continue;
+                    }
+                }
             }
         })?;
     Ok((h, event_rx))
@@ -431,9 +464,24 @@ fn host_session_once<C: FrameStream + Send + 'static>(
                         *l_active.lock().unwrap() = Instant::now();
                         match frame.ty {
                             FrameType::Input => {
-                                let payload = r_cipher.lock().unwrap().open(&frame.payload)?;
-                                let msg = InputMsg::decode(&payload)?;
-                                apply_input(&mut injector, msg)?;
+                                let payload = match r_cipher.lock().unwrap().open(&frame.payload) {
+                                    Ok(p) => p,
+                                    Err(e) => {
+                                        eprintln!("[host-recv] 输入帧解密失败(跳过): {}", e);
+                                        continue;
+                                    }
+                                };
+                                let msg = match InputMsg::decode(&payload) {
+                                    Ok(m) => m,
+                                    Err(e) => {
+                                        eprintln!("[host-recv] 输入帧解码失败(跳过): {}", e);
+                                        continue;
+                                    }
+                                };
+                                // 单个输入失败不致命：记录后继续，避免整个接收线程退出导致失控
+                                if let Err(e) = apply_input(&mut injector, msg) {
+                                    eprintln!("[host-recv] 输入注入失败(跳过): {}", e);
+                                }
                             }
                             FrameType::Heartbeat => {}
                             FrameType::Goodbye => {
