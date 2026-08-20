@@ -85,11 +85,14 @@ pub fn spawn_host_via_relay(
         .name("pairdesk-host-relay".into())
         .spawn(move || {
             let result = (|| -> Result<()> {
+                eprintln!("[host-relay] 正在向中继注册: relay={}, sid={}, hole_port={}", relay, sid, hole_port);
                 let conn = relay::register_host(relay, &sid, hole_port)?;
+                eprintln!("[host-relay] 中继注册成功，等待控制端连入…");
                 let _ = host_session_once(conn, &password, &event_tx, &cmd_rx);
                 Ok(())
             })();
             if let Err(e) = result {
+                eprintln!("[host-relay] 出现错误: {}", e);
                 let _ = event_tx.send(CoreEvent::Error(format!("中继被控端: {}", e)));
             }
         })?;
@@ -110,11 +113,14 @@ pub fn spawn_viewer_via_relay(
         .name("pairdesk-viewer-relay".into())
         .spawn(move || {
             let result = (|| -> Result<()> {
+                eprintln!("[viewer-relay] 正在通过中继匹配 host: relay={}, sid={}", relay, sid);
                 let (conn, hole) = relay::connect_viewer(relay, &sid)?;
+                eprintln!("[viewer-relay] 中继匹配成功，拿到打洞端点: {}", hole);
                 let _ = event_tx.send(CoreEvent::SignalHole(hole)); // 上报打洞端点(供后续 QUIC 直连)
                 viewer_session_with_conn(conn, &password, &event_tx, &cmd_rx)
             })();
             if let Err(e) = result {
+                eprintln!("[viewer-relay] 出现错误: {}", e);
                 let _ = event_tx.send(CoreEvent::Error(format!("中继控制端: {}", e)));
             }
         })?;
@@ -136,6 +142,7 @@ pub fn spawn_host_via_quic(
         .name("pairdesk-host-quic".into())
         .spawn(move || {
             let result = (|| -> Result<()> {
+                eprintln!("[host-quic] 正在启动 QUIC Server, 监听端口: {}", hole_port);
                 let id = crate::certs::ensure_identity(&identity_dir())?;
                 let rt = Arc::new(tokio::runtime::Runtime::new()?);
                 let (send, recv) = rt.block_on(async move {
@@ -143,18 +150,22 @@ pub fn spawn_host_via_quic(
                         crate::certs::server_quic_config(&id)?,
                         (std::net::Ipv4Addr::UNSPECIFIED, hole_port).into(),
                     )?;
+                    eprintln!("[host-quic] QUIC Server 监听就绪, 等待连接…");
                     let inc = server
                         .accept()
                         .await
                         .ok_or_else(|| anyhow::anyhow!("QUIC server 关闭"))?;
                     let conn = inc.await?;
+                    eprintln!("[host-quic] 收到对端 QUIC 连接, 打开双向流…");
                     conn.accept_bi().await.map_err(anyhow::Error::from)
                 })?;
+                eprintln!("[host-quic] QUIC 帧流已建立, 开始会话握手…");
                 let fs = crate::quic_frame::QuicFrameStream::new(rt, send, recv);
                 let _ = host_session_once(fs, &password, &event_tx, &cmd_rx);
                 Ok(())
             })();
             if let Err(e) = result {
+                eprintln!("[host-quic] 出现错误: {}", e);
                 let _ = event_tx.send(CoreEvent::Error(format!("QUIC 被控端: {}", e)));
             }
         })?;
@@ -239,8 +250,9 @@ pub fn spawn_host_auto(
     let h = crate::CoreHandle::from_tx(cmd_tx);
 
     // 两路子会话各自就绪（QUIC 打洞 + 中继兜底）
-    let (qh, qrx) = spawn_host_via_quic(hole_port, password.clone())?;
-    let (rh, rrx) = spawn_host_via_relay(relay, sid, hole_port, password)?;
+    eprintln!("[host] 启动自动被控端: sid={}, relay={}, hole_port={}", sid, relay, port);
+    let (qh, qrx) = spawn_host_via_quic(port, password.clone())?;
+    let (rh, rrx) = spawn_host_via_relay(relay, sid, port, password)?;
 
     // 子事件 → 主事件聚合
     let e1 = event_tx.clone();
@@ -287,20 +299,26 @@ pub fn spawn_viewer_auto(
         .name("pairdesk-viewer-auto".into())
         .spawn(move || {
             let result = (|| -> Result<()> {
+                eprintln!("[viewer-auto] 正在通过中继匹配 host: relay={}, sid={}", relay, sid);
                 let (relay_conn, hole) = relay::connect_viewer(relay, &sid)?;
+                eprintln!("[viewer-auto] 中继匹配成功，拿到对端打洞端点: {}", hole);
                 // ① 先试 QUIC 打洞直连
+                eprintln!("[viewer-auto] 尝试 QUIC 打洞直连 (4s 超时)…");
                 match try_quic_connect(hole) {
                     Ok(fs) => {
+                        eprintln!("[viewer-auto] ✅ QUIC 打洞直连成功，切换为主链路！");
                         let _ = event_tx.send(CoreEvent::Transport("QUIC 打洞直连".into()));
                         viewer_session_with_conn(fs, &password, &event_tx, &cmd_rx)
                     }
                     Err(e) => {
+                        eprintln!("[viewer-auto] ⚠️ QUIC 打洞未成功 ({})，自动降级走中继兜底！", e);
                         let _ = event_tx.send(CoreEvent::Transport(format!("中继兜底 ({})", e)));
                         viewer_session_with_conn(relay_conn, &password, &event_tx, &cmd_rx)
                     }
                 }
             })();
             if let Err(e) = result {
+                eprintln!("[viewer-auto] 出现错误: {}", e);
                 let _ = event_tx.send(CoreEvent::Error(format!("自动择一控制端: {}", e)));
             }
         })?;
@@ -362,18 +380,23 @@ fn host_session_once<C: FrameStream + Send + 'static>(
     let _peer = conn.peer_addr()?;
 
     // ---- 握手 ----
+    eprintln!("[host-session] 收到连接，等待 Hello 帧…");
     let hello = recv_typed::<_, HelloMsg>(&mut conn, FrameType::Hello)?;
+    eprintln!("[host-session] 收到 Hello, 发送 HelloAck(含随机数与 salt)…");
     let host_random: [u8; 16] = rand::random();
     let salt: [u8; 32] = rand::random();
     conn.send_frame(FrameType::HelloAck, &HelloAckMsg { host_random, salt }.encode())?;
 
+    eprintln!("[host-session] 等待客户端 Auth 认证信息…");
     let auth = recv_typed::<_, AuthMsg>(&mut conn, FrameType::Auth)?;
     let expect = password_hash(&salt, password);
     if auth.hash != expect {
+        eprintln!("[host-session] ❌ 密码认证失败！");
         conn.send_frame(FrameType::AuthDenied, &AuthDeniedMsg { reason: "密码错误".into() }.encode())?;
         let _ = tx.send(CoreEvent::AuthResult { ok: false, reason: Some("密码错误".into()) });
         return Ok(());
     }
+    eprintln!("[host-session] ✅ 密码认证成功，发送 AuthOk，建立加密通道…");
     conn.send_frame(FrameType::AuthOk, &[])?;
     let _ = tx.send(CoreEvent::AuthResult { ok: true, reason: None });
     let _ = tx.send(CoreEvent::PeerConnected);
@@ -543,13 +566,17 @@ fn viewer_session_with_conn<C: FrameStream + Send + 'static>(
     conn.set_read_timeout(READ_TIMEOUT)?;
 
     // ---- 握手 ----
+    eprintln!("[viewer-session] 开始握手，发送 Hello 帧…");
     let viewer_random: [u8; 16] = rand::random();
     conn.send_frame(FrameType::Hello, &HelloMsg { viewer_random }.encode())?;
+    eprintln!("[viewer-session] 等待 HelloAck…");
     let ack = recv_typed::<_, HelloAckMsg>(&mut conn, FrameType::HelloAck)?;
+    eprintln!("[viewer-session] 收到 HelloAck, 发送密码哈希认证…");
     let auth = AuthMsg { hash: password_hash(&ack.salt, password) };
     conn.send_frame(FrameType::Auth, &auth.encode())?;
 
     // 等待 AUTH_OK 或 AUTH_DENIED（最多 20 秒）
+    eprintln!("[viewer-session] 等待 AuthOk 确认…");
     let mut authed = false;
     let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {
@@ -562,6 +589,7 @@ fn viewer_session_with_conn<C: FrameStream + Send + 'static>(
                     }
                     FrameType::AuthDenied => {
                         let m = AuthDeniedMsg::decode(&frame.payload)?;
+                        eprintln!("[viewer-session] ❌ 被控端拒绝认证: {}", m.reason);
                         let _ = tx.send(CoreEvent::AuthResult { ok: false, reason: Some(m.reason) });
                         return Ok(());
                     }
@@ -572,9 +600,11 @@ fn viewer_session_with_conn<C: FrameStream + Send + 'static>(
         }
     }
     if !authed {
+        eprintln!("[viewer-session] ❌ 认证超时(20s 未收到 AuthOk)");
         let _ = tx.send(CoreEvent::AuthResult { ok: false, reason: Some("认证超时".into()) });
         return Ok(());
     }
+    eprintln!("[viewer-session] ✅ 认证通过，会话加密建立成功！");
     let _ = tx.send(CoreEvent::AuthResult { ok: true, reason: None });
     let _ = tx.send(CoreEvent::PeerConnected);
 
