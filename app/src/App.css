@@ -1,27 +1,28 @@
 @import "tailwindcss";
 
-@theme {
+@theme inline {
   --font-sans: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI",
     "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", ui-sans-serif, sans-serif;
   --font-display: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont,
     "Segoe UI", "PingFang SC", "Hiragino Sans GB", ui-sans-serif, sans-serif;
   --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
 
-  --color-pd-bg: #0b0d10;
-  --color-pd-elev: #13161c;
-  --color-pd-hover: #1a1f27;
-  --color-pd-fg: #eef1f6;
-  --color-pd-muted: #8b93a1;
-  --color-pd-border: rgb(255 255 255 / 0.08);
-  --color-pd-border-strong: rgb(255 255 255 / 0.14);
-  --color-pd-primary: #2dd4bf;
-  --color-pd-primary-hover: #5eead4;
-  --color-pd-primary-fg: #042f2e;
-  --color-pd-primary-soft: rgb(45 212 191 / 0.12);
-  --color-pd-danger: #f87171;
-  --color-pd-warn: #f59e0b;
-  --color-pd-online: #34d399;
-  --color-pd-glow: rgb(45 212 191 / 0.09);
+  --color-pd-bg: var(--pd-bg);
+  --color-pd-elev: var(--pd-bg-elev);
+  --color-pd-hover: var(--pd-bg-hover);
+  --color-pd-input: var(--pd-bg-input);
+  --color-pd-fg: var(--pd-fg);
+  --color-pd-muted: var(--pd-fg-muted);
+  --color-pd-border: var(--pd-border);
+  --color-pd-border-strong: var(--pd-border-strong);
+  --color-pd-primary: var(--pd-primary);
+  --color-pd-primary-hover: var(--pd-primary-hover);
+  --color-pd-primary-fg: var(--pd-primary-fg);
+  --color-pd-primary-soft: var(--pd-primary-soft);
+  --color-pd-danger: var(--pd-danger);
+  --color-pd-warn: var(--pd-status-connecting);
+  --color-pd-online: var(--pd-status-online);
+  --color-pd-glow: var(--pd-glow);
 
   --radius-pd: 0.625rem;
   --radius-pd-lg: 0.875rem;
@@ -35,12 +36,12 @@ body,
 }
 
 body {
-  background: var(--color-pd-bg);
-  color: var(--color-pd-fg);
+  background: var(--pd-bg);
+  color: var(--pd-fg);
 }
 
 @utility pd-glow {
   background:
-    radial-gradient(ellipse 80% 55% at 50% -20%, var(--color-pd-glow), transparent 58%),
-    radial-gradient(ellipse 40% 30% at 100% 110%, var(--color-pd-glow), transparent 50%);
+    radial-gradient(ellipse 80% 55% at 50% -20%, var(--pd-glow), transparent 58%),
+    radial-gradient(ellipse 40% 30% at 100% 110%, var(--pd-glow), transparent 50%);
 }

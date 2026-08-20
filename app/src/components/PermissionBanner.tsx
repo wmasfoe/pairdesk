@@ -51,7 +51,7 @@ export function PermissionBanner({
               <span className="inline-flex items-center gap-1.5 text-[13px] font-medium">
                 <IconScreen size={14} /> 屏幕录制
               </span>
-              <span className="rounded bg-pd-warn/20 px-1.5 py-0.5 text-[11px] text-amber-300">未授权 · 被控端无法传画面</span>
+              <span className="rounded bg-pd-warn/20 px-1.5 py-0.5 text-[11px] text-pd-warn">未授权 · 被控端无法传画面</span>
             </div>
             <div className="flex items-center gap-1.5">
               <Button size="sm" variant="secondary" onClick={() => onRequest('screen')}>
@@ -70,7 +70,7 @@ export function PermissionBanner({
               <span className="inline-flex items-center gap-1.5 text-[13px] font-medium">
                 <IconKeyboard size={14} /> 辅助功能
               </span>
-              <span className="rounded bg-pd-warn/20 px-1.5 py-0.5 text-[11px] text-amber-300">未授权 · 控制端无法输入</span>
+              <span className="rounded bg-pd-warn/20 px-1.5 py-0.5 text-[11px] text-pd-warn">未授权 · 控制端无法输入</span>
             </div>
             <div className="flex items-center gap-1.5">
               <Button size="sm" variant="ghost" onClick={() => onOpenSettings('accessibility')}>

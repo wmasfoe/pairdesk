@@ -19,7 +19,7 @@ export function AllowToggle({
         onChange={onChange}
         className={cn(
           'group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full p-1 transition',
-          'bg-white/15 data-checked:bg-pd-primary',
+          'bg-pd-border-strong data-checked:bg-pd-primary',
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pd-primary',
         )}
       >

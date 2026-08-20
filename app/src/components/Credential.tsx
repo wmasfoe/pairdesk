@@ -35,11 +35,11 @@ export function Credential({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="text-xs font-medium tracking-wide text-pd-muted">{label}</div>
+      <div className="text-[13px] font-medium tracking-wide text-pd-muted">{label}</div>
       <div className="flex items-center gap-1.5">
         <input
           className={cn(
-            'min-w-0 flex-1 rounded-pd border border-pd-border bg-pd-elev px-3.5 text-pd-fg outline-none',
+            'min-w-0 flex-1 rounded-pd border border-pd-border bg-pd-input px-3.5 text-pd-fg outline-none',
             'focus:border-pd-primary focus:shadow-[0_0_0_3px_var(--color-pd-primary-soft)]',
             large ? 'h-[3.25rem] text-center text-[1.375rem] font-semibold tracking-[0.12em]' : 'h-11 text-base',
             mono && 'font-mono tabular-nums tracking-wider',
