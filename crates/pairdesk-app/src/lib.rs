@@ -53,7 +53,9 @@ pub fn run() {
         .manage(bridge::AppState::default())
         .invoke_handler(tauri::generate_handler![
             bridge::pd_set_allowed,
+            bridge::pd_start_host,
             bridge::pd_start_host_auto,
+            bridge::pd_connect,
             bridge::pd_connect_auto,
             bridge::pd_stop,
             bridge::pd_send_input,

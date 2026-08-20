@@ -8,12 +8,13 @@ import { useState } from 'react';
 import { useSession, type SessionPhase } from '../state/useSession';
 import { usePermissions } from '../state/usePermissions';
 import { PermissionBanner } from '../components/PermissionBanner';
-import { VideoView } from '../components/VideoView';
 import { PageHeader } from '../components/PageHeader';
 import { AdvancedPanel } from '../components/AdvancedPanel';
-import type { StatusTone } from '@pairdesk/ui-kit';
-import { DEFAULT_RELAY } from '../constants';
+import { VideoView } from '../components/VideoView';
 import { cn } from '../lib/cn';
+import type { StatusTone } from '@pairdesk/ui-kit';
+import type { ConnectionMode } from '../bridge/types';
+import { DEFAULT_RELAY } from '../constants';
 
 const TONE: Record<SessionPhase, StatusTone> = {
   idle: 'idle',
@@ -27,6 +28,7 @@ const TONE: Record<SessionPhase, StatusTone> = {
 export function ViewerPage({ onBack }: { onBack: () => void }) {
   const session = useSession();
   const perms = usePermissions();
+  const [mode, setMode] = useState<ConnectionMode>('relay');
   const [relay, setRelay] = useState(DEFAULT_RELAY);
   const [sid, setSid] = useState('');
   const [password, setPassword] = useState('');
@@ -53,7 +55,7 @@ export function ViewerPage({ onBack }: { onBack: () => void }) {
 
       {!connected ? (
         <div className="flex flex-col gap-4">
-          <p className="text-[13px] text-pd-muted">输入对方给的会话码和密码，程序会自动选择最优链路。</p>
+          <p className="text-[13px] text-pd-muted">输入对方给的会话码和密码，点击连接开始协助。</p>
           <Card className="flex flex-col gap-4">
             <TextField label="对方会话码" value={sid} onChange={setSid} placeholder="如 pd-AB12C34" autoComplete="off" spellCheck={false} />
             <TextField label="连接密码" value={password} onChange={setPassword} placeholder="一次性密码" type="password" />
@@ -63,12 +65,30 @@ export function ViewerPage({ onBack }: { onBack: () => void }) {
             className="pd-btn--block"
             size="lg"
             disabled={!sid || !password || busy}
-            onClick={() => session.connectAuto(relay, sid, password)}
+            onClick={() => session.connect(mode, relay, sid, password)}
           >
             {busy ? '连接中…' : '连接'}
           </Button>
           <AdvancedPanel>
-            <TextField label="中继/VPS 地址" value={relay} onChange={setRelay} placeholder={DEFAULT_RELAY} />
+            <div className="flex flex-col gap-1">
+              <label className="text-[12px] font-medium text-pd-muted">连接模式</label>
+              <select
+                value={mode}
+                onChange={(e) => setMode(e.target.value as ConnectionMode)}
+                className="w-full rounded-pd border border-pd-border bg-pd-elev px-3 py-2 text-[13px] text-pd-fg outline-none focus:border-pd-primary"
+              >
+                <option value="relay">🌐 中继模式 (默认，经 VPS 最稳定)</option>
+                <option value="quic">⚡ QUIC 直连 (目标填对端 IP:端口)</option>
+                <option value="direct">🏠 TCP 直连 (局域网/同 WiFi，目标填 IP:端口)</option>
+                <option value="auto">🤖 智能自动探测 (QUIC 优先 -&gt; 中继兜底)</option>
+              </select>
+            </div>
+            <TextField
+              label={mode === 'quic' || mode === 'direct' ? '对端目标地址 (IP:端口)' : '中继/VPS 地址'}
+              value={relay}
+              onChange={setRelay}
+              placeholder={DEFAULT_RELAY}
+            />
           </AdvancedPanel>
           {session.transport && <p className="m-0 text-[13px] text-pd-muted">传输路径：{session.transport}</p>}
           {session.error && (

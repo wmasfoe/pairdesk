@@ -89,7 +89,38 @@ fn start_session(
     Ok(())
 }
 
-/// 起被控端（自动就绪：QUIC 打洞 + 中继兜底）。
+/// 起被控端（模式：relay / quic / auto / direct）。
+#[tauri::command]
+pub fn pd_start_host(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    mode: String,
+    relay: String,
+    sid: String,
+    hole_port: u16,
+    password: String,
+) -> Result<(), String> {
+    if !state.allowed.load(Ordering::SeqCst) {
+        return Err("「允许远程控制」开关是关闭的".into());
+    }
+    let (h, rx) = match mode.as_str() {
+        "quic" => CoreHandle::start_host_via_quic(hole_port, password).map_err(|e| e.to_string())?,
+        "direct" => CoreHandle::start_host(hole_port, password).map_err(|e| e.to_string())?,
+        "auto" => {
+            let addr = parse_addr(&relay)?;
+            CoreHandle::start_host_auto(addr, sid, hole_port, password).map_err(|e| e.to_string())?
+        }
+        _ => {
+            // 默认 relay
+            let addr = parse_addr(&relay)?;
+            CoreHandle::start_host_via_relay(addr, sid, hole_port, password).map_err(|e| e.to_string())?
+        }
+    };
+    h.set_quality(Quality { jpeg: 80, fps: 20 });
+    start_session(&state, &app, h, rx)
+}
+
+/// 兼容旧命令
 #[tauri::command]
 pub fn pd_start_host_auto(
     state: State<'_, AppState>,
@@ -99,17 +130,42 @@ pub fn pd_start_host_auto(
     hole_port: u16,
     password: String,
 ) -> Result<(), String> {
-    if !state.allowed.load(Ordering::SeqCst) {
-        return Err("「允许远程控制」开关是关闭的".into());
-    }
-    let addr = parse_addr(&relay)?;
-    let (h, rx) = CoreHandle::start_host_auto(addr, sid, hole_port, password)
-        .map_err(|e| e.to_string())?;
-    h.set_quality(Quality { jpeg: 80, fps: 20 });
+    pd_start_host(state, app, "auto".into(), relay, sid, hole_port, password)
+}
+
+/// 起控制端（模式：relay / quic / auto / direct）。
+#[tauri::command]
+pub fn pd_connect(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    mode: String,
+    target: String,
+    sid: String,
+    password: String,
+) -> Result<(), String> {
+    let (h, rx) = match mode.as_str() {
+        "quic" => {
+            let addr = parse_addr(&target)?;
+            CoreHandle::connect_via_quic(addr, password).map_err(|e| e.to_string())?
+        }
+        "direct" => {
+            let addr = parse_addr(&target)?;
+            CoreHandle::connect(addr, password).map_err(|e| e.to_string())?
+        }
+        "auto" => {
+            let addr = parse_addr(&target)?;
+            CoreHandle::connect_auto(addr, sid, password).map_err(|e| e.to_string())?
+        }
+        _ => {
+            // 默认 relay
+            let addr = parse_addr(&target)?;
+            CoreHandle::connect_via_relay(addr, sid, password).map_err(|e| e.to_string())?
+        }
+    };
     start_session(&state, &app, h, rx)
 }
 
-/// 起控制端（自动择一：QUIC 打洞优先 → 中继兜底）。
+/// 兼容旧命令
 #[tauri::command]
 pub fn pd_connect_auto(
     state: State<'_, AppState>,
@@ -118,9 +174,7 @@ pub fn pd_connect_auto(
     sid: String,
     password: String,
 ) -> Result<(), String> {
-    let addr = parse_addr(&relay)?;
-    let (h, rx) = CoreHandle::connect_auto(addr, sid, password).map_err(|e| e.to_string())?;
-    start_session(&state, &app, h, rx)
+    pd_connect(state, app, "auto".into(), relay, sid, password)
 }
 
 /// 停止当前会话。

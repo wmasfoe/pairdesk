@@ -29,10 +29,14 @@ export interface SessionState {
 
 /** 操作接口（供页面调用） */
 export interface SessionControls {
-  /** 启动被控端（会话码 + 密码 + 自动就绪） */
+  /** 启动被控端 */
+  startHost: (mode: import('../bridge/types').ConnectionMode, relay: string, sid: string, holePort: number, password: string) => void;
+  /** 启动被控端（自动模式） */
   startHostAuto: (relay: string, sid: string, holePort: number, password: string) => void;
-  /** 启动控制端（会话码 + 密码 + 自动择一） */
-  connectAuto: (relay: string, sid: string, password: string) => void;
+  /** 启动控制端 */
+  connect: (mode: import('../bridge/types').ConnectionMode, target: string, sid: string, password: string) => void;
+  /** 启动控制端（自动模式） */
+  connectAuto: (target: string, sid: string, password: string) => void;
   disconnect: () => void;
 }
 
@@ -80,23 +84,40 @@ export function useSession(): SessionState & SessionControls {
     });
   }, []);
 
-  const startHostAuto = useCallback(
-    (relay: string, sid: string, holePort: number, password: string) => {
+  const startHost = useCallback(
+    (mode: import('../bridge/types').ConnectionMode, relay: string, sid: string, holePort: number, password: string) => {
       setState({ phase: 'authentication', screen: null, error: null, notice: null, transport: null });
-      void bridgeRef.current.startHostAuto({ relay, sid, holePort, password });
+      void bridgeRef.current.startHost({ mode, relay, sid, holePort, password });
     },
     [],
   );
 
-  const connectAuto = useCallback((relay: string, sid: string, password: string) => {
-    setState({ phase: 'authentication', screen: null, error: null, notice: null, transport: null });
-    void bridgeRef.current.connectAuto({ relay, sid, password });
-  }, []);
+  const startHostAuto = useCallback(
+    (relay: string, sid: string, holePort: number, password: string) => {
+      startHost('auto', relay, sid, holePort, password);
+    },
+    [startHost],
+  );
+
+  const connect = useCallback(
+    (mode: import('../bridge/types').ConnectionMode, target: string, sid: string, password: string) => {
+      setState({ phase: 'authentication', screen: null, error: null, notice: null, transport: null });
+      void bridgeRef.current.connect({ mode, target, sid, password });
+    },
+    [],
+  );
+
+  const connectAuto = useCallback(
+    (target: string, sid: string, password: string) => {
+      connect('auto', target, sid, password);
+    },
+    [connect],
+  );
 
   const disconnect = useCallback(() => {
     bridgeRef.current.stop();
     setState((s) => ({ ...s, phase: 'disconnected' }));
   }, []);
 
-  return { ...state, startHostAuto, connectAuto, disconnect };
+  return { ...state, startHost, startHostAuto, connect, connectAuto, disconnect };
 }

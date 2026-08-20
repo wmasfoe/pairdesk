@@ -28,17 +28,22 @@ export type InputMsg =
   | { kind: 'scroll'; dx: number; dy: number }
   | { kind: 'key'; keycode: number; down: boolean; mods: number };
 
+/** 连接模式 */
+export type ConnectionMode = 'relay' | 'quic' | 'direct' | 'auto';
+
 /** 启动被控端参数 */
 export interface HostParams {
-  relay: string; // 中继/VPS 地址（打洞信令 + 兜底）
-  sid: string; // 会话码（标识这台被控端本次会话）
-  holePort: number; // 打洞 QUIC 端口
+  mode?: ConnectionMode; // 默认 'relay'
+  relay: string; // 中继/VPS 地址
+  sid: string; // 会话码
+  holePort: number; // 打洞 QUIC 端口 / 直连端口
   password: string; // 连接密码
 }
 
 /** 启动控制端参数 */
 export interface ConnectParams {
-  relay: string;
+  mode?: ConnectionMode; // 默认 'relay'
+  target: string; // 中继地址（relay/auto）或目标对端地址（quic/direct）
   sid: string; // 对方给的会话码
   password: string;
 }
@@ -54,9 +59,13 @@ export interface PermissionStatus {
 export interface CoreBridge {
   /** 设置"允许远程控制"总开关（关掉则拒绝起被控端） */
   setAllowed(allowed: boolean): Promise<void>;
-  /** 启动被控端（自动就绪：QUIC 打洞 + 中继兜底） */
+  /** 启动被控端 */
+  startHost(p: HostParams): Promise<void>;
+  /** 启动被控端（兼容旧方法） */
   startHostAuto(p: HostParams): Promise<void>;
-  /** 启动控制端（自动择一：QUIC 打洞优先 → 中继兜底） */
+  /** 启动控制端 */
+  connect(p: ConnectParams): Promise<void>;
+  /** 启动控制端（兼容旧方法） */
   connectAuto(p: ConnectParams): Promise<void>;
   /** 主动断开/停止 */
   stop(): void;

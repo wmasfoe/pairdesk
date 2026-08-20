@@ -25,11 +25,17 @@ export function createTauriBridge(): CoreBridge {
     async setAllowed(allowed) {
       await invoke('pd_set_allowed', { allowed });
     },
-    async startHostAuto({ relay, sid, holePort, password }: HostParams) {
-      await invoke('pd_start_host_auto', { relay, sid, holePort, password });
+    async startHost({ mode = 'relay', relay, sid, holePort, password }: HostParams) {
+      await invoke('pd_start_host', { mode, relay, sid, holePort, password });
     },
-    async connectAuto({ relay, sid, password }: ConnectParams) {
-      await invoke('pd_connect_auto', { relay, sid, password });
+    async startHostAuto({ relay, sid, holePort, password }: HostParams) {
+      await invoke('pd_start_host', { mode: 'auto', relay, sid, holePort, password });
+    },
+    async connect({ mode = 'relay', target, sid, password }: ConnectParams) {
+      await invoke('pd_connect', { mode, target, sid, password });
+    },
+    async connectAuto({ target, sid, password }: ConnectParams) {
+      await invoke('pd_connect', { mode: 'auto', target, sid, password });
     },
     stop() {
       void invoke('pd_stop');

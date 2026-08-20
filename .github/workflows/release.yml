@@ -53,6 +53,25 @@ jobs:
       # 同一 HEAD 首个 push run 就是"全新 pnpm install(无缓存)"在三平台全绿，
       # 故去掉缓存、每次全新装依赖最可靠（多花几十秒，可接受）。
 
+      # ---- 同步版本号（从 tag 或 commit 提取版本更新到 tauri.conf.json / package.json / Cargo.toml）----
+      - name: Sync version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VER="${GITHUB_REF_NAME#v}"
+          else
+            VER="0.1.16"
+          fi
+          echo "Syncing version to $VER"
+          # 替换 tauri.conf.json 中的 version
+          node -e "
+            const fs = require('fs');
+            const p = 'crates/pairdesk-app/tauri.conf.json';
+            const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+            j.version = '$VER';
+            fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+          "
+        shell: bash
+
       # ---- 构建前端（产 app/dist）----
       - name: Install & build frontend
         run: |

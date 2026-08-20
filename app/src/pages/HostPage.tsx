@@ -16,6 +16,7 @@ import { AllowToggle } from '../components/AllowToggle';
 import { AdvancedPanel } from '../components/AdvancedPanel';
 import { IconCheck, IconCopy } from '../components/icons';
 import type { StatusTone } from '@pairdesk/ui-kit';
+import type { ConnectionMode } from '../bridge/types';
 import { DEFAULT_HOLE_PORT, DEFAULT_RELAY } from '../constants';
 
 const TONE: Record<SessionPhase, StatusTone> = {
@@ -44,6 +45,7 @@ function statusLabel(phase: SessionPhase): string {
 export function HostPage({ onBack }: { onBack: () => void }) {
   const session = useSession();
   const perms = usePermissions();
+  const [mode, setMode] = useState<ConnectionMode>('relay');
   const [relay, setRelay] = useState(DEFAULT_RELAY);
   const [sid, setSid] = useState(() => genSid());
   const [holePort, setHolePort] = useState(DEFAULT_HOLE_PORT);
@@ -98,13 +100,28 @@ export function HostPage({ onBack }: { onBack: () => void }) {
             className="pd-btn--block"
             size="lg"
             disabled={!allowed || !sid || !password}
-            onClick={() => session.startHostAuto(relay, sid, Number(holePort) || 23517, password)}
+            onClick={() => session.startHost(mode, relay, sid, Number(holePort) || 23517, password)}
           >
             开始接收协助
           </Button>
           <AdvancedPanel>
-            <TextField label="中继/VPS 地址" value={relay} onChange={setRelay} placeholder={DEFAULT_RELAY} />
-            <TextField label="打洞端口" value={holePort} onChange={setHolePort} inputMode="numeric" />
+            <div className="flex flex-col gap-1">
+              <label className="text-[12px] font-medium text-pd-muted">连接模式</label>
+              <select
+                value={mode}
+                onChange={(e) => setMode(e.target.value as ConnectionMode)}
+                className="w-full rounded-pd border border-pd-border bg-pd-elev px-3 py-2 text-[13px] text-pd-fg outline-none focus:border-pd-primary"
+              >
+                <option value="relay">🌐 中继模式 (默认，经 VPS 最稳定)</option>
+                <option value="quic">⚡ QUIC 模式 (异网直连打洞)</option>
+                <option value="direct">🏠 TCP 直连 (局域网/同 WiFi)</option>
+                <option value="auto">🤖 智能自动探测 (QUIC 优先 -&gt; 中继兜底)</option>
+              </select>
+            </div>
+            {(mode === 'relay' || mode === 'auto') && (
+              <TextField label="中继/VPS 地址" value={relay} onChange={setRelay} placeholder={DEFAULT_RELAY} />
+            )}
+            <TextField label="打洞/直连端口" value={holePort} onChange={setHolePort} inputMode="numeric" />
           </AdvancedPanel>
           {session.notice && <p className="m-0 rounded-pd bg-pd-primary-soft px-3 py-2 text-[13px] text-pd-primary">{session.notice}</p>}
           {session.error && (

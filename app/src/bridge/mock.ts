@@ -14,10 +14,19 @@ export function createMockBridge(): CoreBridge {
     async setAllowed() {
       // mock 下忽略开关
     },
-    async startHostAuto() {
-      // 模拟被控端：就绪
+    async startHost() {
       emit({ type: 'authResult', ok: true });
       emit({ type: 'peerConnected' });
+    },
+    async startHostAuto() {
+      emit({ type: 'authResult', ok: true });
+      emit({ type: 'peerConnected' });
+    },
+    async connect() {
+      emit({ type: 'authResult', ok: true });
+      emit({ type: 'peerConnected' });
+      emit({ type: 'size', w: 1280, h: 800 });
+      timers.push(setInterval(() => emitFakeFrame(), 120));
     },
     async connectAuto() {
       // 模拟控制端：认证 + 收帧

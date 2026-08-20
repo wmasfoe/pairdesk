@@ -429,9 +429,9 @@ fn host_session_once<C: FrameStream + Send + 'static>(
                     Some(frame) => {
                         timeouts = 0;
                         *l_active.lock().unwrap() = Instant::now();
-                        let payload = r_cipher.lock().unwrap().open(&frame.payload)?;
                         match frame.ty {
                             FrameType::Input => {
+                                let payload = r_cipher.lock().unwrap().open(&frame.payload)?;
                                 let msg = InputMsg::decode(&payload)?;
                                 apply_input(&mut injector, msg)?;
                             }
@@ -664,13 +664,14 @@ fn viewer_session_with_conn<C: FrameStream + Send + 'static>(
         match conn.recv_frame()? {
             Some(frame) => {
                 timeouts = 0;
-                let payload = cipher.lock().unwrap().open(&frame.payload)?;
                 match frame.ty {
                     FrameType::Frame => {
+                        let payload = cipher.lock().unwrap().open(&frame.payload)?;
                         let m = FrameMsg::decode(&payload)?;
                         let _ = tx.send(CoreEvent::ScreenFrame(m.jpeg));
                     }
                     FrameType::Size => {
+                        let payload = cipher.lock().unwrap().open(&frame.payload)?;
                         let m = SizeMsg::decode(&payload)?;
                         let _ = tx.send(CoreEvent::Size { w: m.w, h: m.h });
                     }
