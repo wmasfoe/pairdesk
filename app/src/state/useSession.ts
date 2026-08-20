@@ -89,7 +89,7 @@ export function useSession(): SessionState & SessionControls {
   );
 
   const connectAuto = useCallback((relay: string, sid: string, password: string) => {
-    setState({ phase: 'authentication', screen: null, error: null, transport: null });
+    setState({ phase: 'authentication', screen: null, error: null, notice: null, transport: null });
     void bridgeRef.current.connectAuto({ relay, sid, password });
   }, []);
 
