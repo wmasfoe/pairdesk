@@ -500,6 +500,9 @@ fn host_session_once<C: FrameStream + Send + 'static>(
     let mut capturer = PlatformCapturer::new()?;
     let (w, h) = capturer.display_size();
     let _ = tx.send(CoreEvent::Size { w, h });
+    let size_payload = SizeMsg { w, h }.encode();
+    let sealed_size = cipher.lock().unwrap().seal(&size_payload)?;
+    let _ = send_conn.send_frame(FrameType::Size, &sealed_size);
     let mut seq: u32 = 0;
     while running.load(Ordering::SeqCst) {
         let q = *quality.lock().unwrap();
