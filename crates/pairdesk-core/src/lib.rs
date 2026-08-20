@@ -7,6 +7,7 @@ pub mod capture;
 pub mod certs;
 pub mod encode;
 pub mod input;
+pub mod permissions;
 pub mod protocol;
 pub mod quic_frame;
 pub mod relay;

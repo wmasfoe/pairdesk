@@ -6,6 +6,8 @@
 import { Button, StatusDot, TextField } from '@pairdesk/ui-kit';
 import { useState } from 'react';
 import { useSession, type SessionPhase } from '../state/useSession';
+import { usePermissions } from '../state/usePermissions';
+import { PermissionBanner } from '../components/PermissionBanner';
 import { VideoView } from '../components/VideoView';
 import type { StatusTone } from '@pairdesk/ui-kit';
 import { DEFAULT_RELAY } from '../constants';
@@ -21,6 +23,7 @@ const TONE: Record<SessionPhase, StatusTone> = {
 
 export function ViewerPage({ onBack }: { onBack: () => void }) {
   const session = useSession();
+  const perms = usePermissions();
   const [relay, setRelay] = useState(DEFAULT_RELAY);
   const [sid, setSid] = useState('');
   const [password, setPassword] = useState('');
@@ -36,6 +39,16 @@ export function ViewerPage({ onBack }: { onBack: () => void }) {
           {labelOf(session.phase)}
         </StatusDot>
       </header>
+
+      <PermissionBanner
+        needGuidance={perms.needGuidance}
+        screenRecording={perms.screenRecording}
+        accessibility={perms.accessibility}
+        requiredFor="viewer"
+        onRequest={perms.request}
+        onOpenSettings={perms.openSettings}
+        onRecheck={perms.recheck}
+      />
 
       {!connected ? (
         <div className="pd-viewer-form">

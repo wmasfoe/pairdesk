@@ -8,6 +8,8 @@ import { Button, StatusDot, TextField } from '@pairdesk/ui-kit';
 import { useState } from 'react';
 import { getCoreBridge } from '../bridge';
 import { useSession, type SessionPhase } from '../state/useSession';
+import { usePermissions } from '../state/usePermissions';
+import { PermissionBanner } from '../components/PermissionBanner';
 import type { StatusTone } from '@pairdesk/ui-kit';
 import { DEFAULT_HOLE_PORT, DEFAULT_RELAY } from '../constants';
 
@@ -31,6 +33,7 @@ function genSid(): string {
 
 export function HostPage({ onBack }: { onBack: () => void }) {
   const session = useSession();
+  const perms = usePermissions();
   const [relay, setRelay] = useState(DEFAULT_RELAY);
   const [sid, setSid] = useState(() => genSid());
   const [holePort, setHolePort] = useState(DEFAULT_HOLE_PORT);
@@ -52,6 +55,16 @@ export function HostPage({ onBack }: { onBack: () => void }) {
           {session.phase === 'connected' ? '有人正在观看你的屏幕' : '等待连接'}
         </StatusDot>
       </header>
+
+      <PermissionBanner
+        needGuidance={perms.needGuidance}
+        screenRecording={perms.screenRecording}
+        accessibility={perms.accessibility}
+        requiredFor="host"
+        onRequest={perms.request}
+        onOpenSettings={perms.openSettings}
+        onRecheck={perms.recheck}
+      />
 
       {!active ? (
         <div className="pd-host-form">

@@ -2400,6 +2400,7 @@ dependencies = [
  "rand 0.8.7",
  "rcgen",
  "rustls",
+ "serde",
  "sha2",
  "tokio",
  "windows 0.58.0",

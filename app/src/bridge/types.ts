@@ -43,6 +43,13 @@ export interface ConnectParams {
   password: string;
 }
 
+/** 平台权限状态 */
+export interface PermissionStatus {
+  screenRecording: boolean;
+  accessibility: boolean;
+  needGuidance: boolean;
+}
+
 /** 桥接层对前端暴露的统一接口（业务层只依赖这个接口） */
 export interface CoreBridge {
   /** 设置"允许远程控制"总开关（关掉则拒绝起被控端） */
@@ -55,6 +62,12 @@ export interface CoreBridge {
   stop(): void;
   /** 发送输入事件（控制端 → 被控端） */
   sendInput(msg: InputMsg): void;
+  /** 检查系统权限状态（macOS 屏幕录制 / 辅助功能） */
+  checkPermissions(): Promise<PermissionStatus>;
+  /** 请求权限（触发弹窗） */
+  requestPermission(type: 'screen' | 'accessibility'): Promise<boolean>;
+  /** 打开系统权限设置 */
+  openPermissionSettings(type: 'screen' | 'accessibility'): Promise<void>;
   /** 订阅核心事件流；返回取消订阅函数 */
   onEvent(cb: (e: CoreEvent) => void): () => void;
 }

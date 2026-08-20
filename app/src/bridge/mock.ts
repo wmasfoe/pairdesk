@@ -34,6 +34,15 @@ export function createMockBridge(): CoreBridge {
     sendInput() {
       // mock 下忽略输入
     },
+    async checkPermissions() {
+      return { screenRecording: true, accessibility: true, needGuidance: false };
+    },
+    async requestPermission() {
+      return true;
+    },
+    async openPermissionSettings() {
+      // mock 忽略
+    },
     onEvent(cb) {
       listeners.add(cb);
       return () => listeners.delete(cb);

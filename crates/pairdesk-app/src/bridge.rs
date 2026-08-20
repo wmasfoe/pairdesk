@@ -152,6 +152,24 @@ pub fn pd_send_input(state: State<'_, AppState>, msg: InputCmd) {
     }
 }
 
+/// 检查平台权限状态（macOS 屏幕录制 / 辅助功能权限）。
+#[tauri::command]
+pub fn pd_check_permissions() -> pairdesk_core::permissions::PermissionStatus {
+    pairdesk_core::permissions::check_permissions()
+}
+
+/// 请求权限（如触发 macOS 屏幕录制系统弹窗）。
+#[tauri::command]
+pub fn pd_request_permission(permission_type: String) -> bool {
+    pairdesk_core::permissions::request_permission(&permission_type)
+}
+
+/// 打开系统隐私与安全设置面板。
+#[tauri::command]
+pub fn pd_open_permission_settings(permission_type: String) {
+    pairdesk_core::permissions::open_permission_settings(&permission_type);
+}
+
 // ---------- 自测模式（无头验证"壳 + 内核"全链路） ----------
 
 /// 自测：设置画面帧落盘目录。

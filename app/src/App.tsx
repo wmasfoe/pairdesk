@@ -8,11 +8,14 @@ import { useState } from 'react';
 import { Card } from '@pairdesk/ui-kit';
 import { HostPage } from './pages/HostPage';
 import { ViewerPage } from './pages/ViewerPage';
+import { usePermissions } from './state/usePermissions';
+import { PermissionBanner } from './components/PermissionBanner';
 
 type Mode = null | 'host' | 'viewer';
 
 export default function App() {
   const [mode, setMode] = useState<Mode>(null);
+  const perms = usePermissions();
 
   if (mode === 'host') return <HostPage onBack={() => setMode(null)} />;
   if (mode === 'viewer') return <ViewerPage onBack={() => setMode(null)} />;
@@ -23,6 +26,17 @@ export default function App() {
       <p className="pd-home__brand">🐈 PairDesk</p>
       <h1 className="pd-home__title">让 <b>好友</b> 帮你<br />远程处理</h1>
       <p className="pd-home__sub">一台当被控端、一台当控制端 · 选择你的角色</p>
+
+      <PermissionBanner
+        needGuidance={perms.needGuidance}
+        screenRecording={perms.screenRecording}
+        accessibility={perms.accessibility}
+        requiredFor="both"
+        onRequest={perms.request}
+        onOpenSettings={perms.openSettings}
+        onRecheck={perms.recheck}
+      />
+
       <div className="pd-home__modes">
         <button className="pd-modecard" onClick={() => setMode('host')}>
           <span className="pd-modecard__icon">🖥️</span>

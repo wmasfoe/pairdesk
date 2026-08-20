@@ -37,6 +37,20 @@ export function createTauriBridge(): CoreBridge {
     sendInput(msg) {
       void invoke('pd_send_input', { msg: serializeInput(msg) });
     },
+    async checkPermissions() {
+      const res = await invoke<{ screen_recording: boolean; accessibility: boolean; need_guidance: boolean }>('pd_check_permissions');
+      return {
+        screenRecording: res.screen_recording,
+        accessibility: res.accessibility,
+        needGuidance: res.need_guidance,
+      };
+    },
+    async requestPermission(type) {
+      return await invoke<boolean>('pd_request_permission', { permissionType: type });
+    },
+    async openPermissionSettings(type) {
+      await invoke('pd_open_permission_settings', { permissionType: type });
+    },
     onEvent(cb) {
       // 幂等注册：只在首次订阅时建立与后端的监听，多订阅方走 Set 分发
       if (!unlisten) {

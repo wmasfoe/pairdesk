@@ -6,6 +6,7 @@ description = "PairDesk 核心引擎:两人 P2P 远程协助的协议/采集/编
 
 [dependencies]
 anyhow = "1"
+serde = { version = "1", features = ["derive"] }
 chacha20poly1305 = "0.10"
 sha2 = "0.10"
 rand = "0.8"
