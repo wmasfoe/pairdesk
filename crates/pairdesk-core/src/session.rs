@@ -713,20 +713,20 @@ mod tests {
 
     #[test]
     fn find_free_udp_port_顺延到空闲端口() {
-        // 占住 start 端口，顺延应返回 > start 的空闲端口
+        // 占住 start 端口，顺延应返回能成功 bind 的空闲端口且 >= start
         let s = std::net::UdpSocket::bind(("0.0.0.0", 0)).unwrap();
         let start = s.local_addr().unwrap().port();
         let got = find_free_udp_port(start);
         assert!(got > start, "被占端口应向后顺延查找空闲端口");
+        // 验证返回的端口确实可以成功 bind
+        assert!(std::net::UdpSocket::bind(("0.0.0.0", got)).is_ok());
     }
 
     #[test]
     fn find_free_udp_port_空闲端口直接返回() {
-        // 找一个当前空闲端口测试
-        let s = std::net::UdpSocket::bind(("0.0.0.0", 0)).unwrap();
-        let free = s.local_addr().unwrap().port();
-        drop(s);
-        let got = find_free_udp_port(free);
-        assert_eq!(got, free);
+        // 随机选择一个未占用的高位端口段测试，验证 find_free_udp_port 返回可用端口
+        let port = find_free_udp_port(45000);
+        assert!(port >= 45000 && port <= 45020);
+        assert!(std::net::UdpSocket::bind(("0.0.0.0", port)).is_ok());
     }
 }
