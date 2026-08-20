@@ -8,9 +8,9 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { getCoreBridge } from '../bridge';
+import { IconMonitor } from './icons';
 
 interface VideoViewProps {
-  /** 远端分辨率（用于占位比例 box） */
   aspect?: { w: number; h: number };
 }
 
@@ -19,10 +19,8 @@ export function VideoView({ aspect }: VideoViewProps) {
   const urlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    // 订阅画面帧；返回取消订阅函数（组件卸载时自动移除）
     return getCoreBridge().onEvent((e) => {
       if (e.type !== 'frame') return;
-      // 拷贝为 ArrayBuffer 底板（规避 TS 5.7+ Uint8Array<ArrayBufferLike> 泛型歧义）
       const bytes = new Uint8Array(e.jpeg);
       const blob = new Blob([bytes], { type: 'image/jpeg' });
       const url = URL.createObjectURL(blob);
@@ -32,7 +30,6 @@ export function VideoView({ aspect }: VideoViewProps) {
     });
   }, []);
 
-  // 卸载时释放最后一个 URL
   useEffect(() => {
     return () => {
       if (urlRef.current) URL.revokeObjectURL(urlRef.current);
@@ -41,20 +38,16 @@ export function VideoView({ aspect }: VideoViewProps) {
 
   return (
     <div
-      className="pd-video"
-      style={{
-        aspectRatio: aspect ? `${aspect.w} / ${aspect.h}` : undefined,
-        background: '#0f172a',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        overflow: 'hidden',
-      }}
+      className="pd-video flex min-h-[280px] flex-1 items-center justify-center overflow-hidden rounded-pd-lg border border-pd-border bg-[#07080a]"
+      style={{ aspectRatio: aspect ? `${aspect.w} / ${aspect.h}` : undefined }}
     >
       {src ? (
-        <img src={src} alt="远程画面" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+        <img src={src} alt="远程画面" className="h-full w-full object-contain" />
       ) : (
-        <span style={{ color: '#94a3b8' }}>等待画面…</span>
+        <span className="flex flex-col items-center gap-2 text-[13px] text-pd-muted">
+          <IconMonitor size={28} className="opacity-50" />
+          等待画面…
+        </span>
       )}
     </div>
   );

@@ -25,7 +25,8 @@ await page.waitForTimeout(500);
 await page.screenshot({ path: `${OUT}/2-viewer-form.png` });
 console.log('✅ 已进入控制端页(表单)');
 
-// 3) 填密码 + 点连接（地址默认 127.0.0.1:8888）
+// 3) 填会话码 + 密码 + 点连接
+await page.getByPlaceholder('如 pd-AB12C34').fill('pd-AB12C34');
 await page.getByPlaceholder('一次性密码').fill('123456');
 await page.getByRole('button', { name: '连接' }).click();
 await page.waitForTimeout(1800); // mock 推帧

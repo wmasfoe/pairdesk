@@ -11,10 +11,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@headlessui/react": "^2.2.10",
     "@pairdesk/ui-kit": "workspace:*",
+    "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/api": "^2.0.0",
+    "clsx": "^2.1.1",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",

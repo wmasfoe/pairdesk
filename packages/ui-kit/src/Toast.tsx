@@ -16,7 +16,11 @@ export interface ToastProps {
 export function Toast({ tone = 'info', children }: ToastProps) {
   // 色调仅影响左边 3px 色条（细节点缀，符合"组件轻量"原则）
   const barColor =
-    tone === 'error' ? '#ef4444' : tone === 'success' ? '#22c55e' : '#3b82f6';
+    tone === 'error'
+      ? 'var(--pd-status-error)'
+      : tone === 'success'
+        ? 'var(--pd-status-online)'
+        : 'var(--pd-primary)';
   return (
     <div className="pd-toast" style={{ borderLeft: `3px solid ${barColor}` }}>
       {children}

@@ -13,32 +13,32 @@
 
 /** 状态语义色（供 StatusDot / 连接状态等使用） */
 export const STATUS_COLORS = {
-  idle: '#9aa0a6', // 空闲/未连接
-  connecting: '#f59e0b', // 连接中/认证中（琥珀）
-  online: '#22c55e', // 在线/已连接（绿）
-  error: '#ef4444', // 错误（红）
+  idle: '#6b7280',
+  connecting: '#f59e0b',
+  online: '#34d399',
+  error: '#f87171',
 } as const;
 
 /** 强调色（主操作）与危险色 —— teal 系，与 logo 青色信号统一 */
 export const ACCENT = {
-  primary: '#0d9488', // teal，主操作按钮
-  primaryHover: '#0f766e',
-  danger: '#ef4444', // 危险操作（断开等）
-  dangerHover: '#dc2626',
+  primary: '#2dd4bf',
+  primaryHover: '#5eead4',
+  danger: '#f87171',
+  dangerHover: '#fca5a5',
 } as const;
 
-/** 字体/布局基准（rem 固定，不随系统字号膨胀——对齐 md-editor 的控件尺寸纪律） */
+/** 字体/布局基准（rem 固定，不随系统字号膨胀） */
 export const SIZE = {
   fontSize: {
-    sm: '0.8125rem', // 13px 辅助文字
-    md: '0.9375rem', // 15px 正文
-    lg: '1.125rem', // 18px 标题
-    xl: '1.5rem', // 24px 大标题/密码
+    sm: '0.8125rem',
+    md: '0.9375rem',
+    lg: '1.125rem',
+    xl: '1.5rem',
   },
   radius: {
-    sm: '0.375rem', // 6px 小控件
-    md: '0.5rem', // 8px 输入框/卡片
-    lg: '0.75rem', // 12px 大卡片
+    sm: '0.375rem',
+    md: '0.625rem',
+    lg: '0.875rem',
   },
   spacing: {
     xs: '0.25rem',
@@ -48,12 +48,12 @@ export const SIZE = {
     xl: '1.5rem',
   },
   control: {
-    height: '2.25rem', // 36px 标准控件高度
+    height: '2.5rem',
   },
 } as const;
 
 /** 阴影层级 */
 export const SHADOW = {
-  card: '0 1px 3px rgba(0,0,0,0.1)',
-  popup: '0 8px 24px rgba(0,0,0,0.18)',
+  card: '0 8px 24px rgba(0,0,0,0.18)',
+  popup: '0 16px 40px rgba(0,0,0,0.4)',
 } as const;

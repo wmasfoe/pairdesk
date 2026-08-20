@@ -19,3 +19,6 @@ export type { ToastProps, ToastTone } from './Toast';
 
 export { Card } from './Card';
 export type { CardProps } from './Card';
+
+export { Switch } from './Switch';
+export type { SwitchProps } from './Switch';

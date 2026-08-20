@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 /**
  * Vite 构建配置。
@@ -10,7 +11,7 @@ import react from '@vitejs/plugin-react';
  *  - clearScreen false：避免污染 Tauri 壳的终端日志。
  */
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   base: './',
   clearScreen: false,
   build: {

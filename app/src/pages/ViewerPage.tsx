@@ -3,14 +3,17 @@
  *
  * 输入对方给的【会话码 + 密码】（中继地址可改），程序自动择一连接。
  */
-import { Button, StatusDot, TextField } from '@pairdesk/ui-kit';
+import { Button, Card, StatusDot, TextField } from '@pairdesk/ui-kit';
 import { useState } from 'react';
 import { useSession, type SessionPhase } from '../state/useSession';
 import { usePermissions } from '../state/usePermissions';
 import { PermissionBanner } from '../components/PermissionBanner';
 import { VideoView } from '../components/VideoView';
+import { PageHeader } from '../components/PageHeader';
+import { AdvancedPanel } from '../components/AdvancedPanel';
 import type { StatusTone } from '@pairdesk/ui-kit';
 import { DEFAULT_RELAY } from '../constants';
+import { cn } from '../lib/cn';
 
 const TONE: Record<SessionPhase, StatusTone> = {
   idle: 'idle',
@@ -31,14 +34,12 @@ export function ViewerPage({ onBack }: { onBack: () => void }) {
   const busy = session.phase === 'authentication';
 
   return (
-    <div className="pd-page pd-page--viewer">
-      <header className="pd-page__head">
-        <Button variant="ghost" size="sm" onClick={onBack}>← 返回</Button>
-        <h1 className="pd-page__title">控制端（去连别人）</h1>
+    <div className={cn('flex min-h-full flex-col gap-5', connected ? 'h-full gap-3 px-3.5 py-3' : 'mx-auto max-w-lg px-6 py-6')}>
+      <PageHeader title="控制端" onBack={onBack}>
         <StatusDot tone={TONE[session.phase]} pulse={busy}>
           {labelOf(session.phase)}
         </StatusDot>
-      </header>
+      </PageHeader>
 
       <PermissionBanner
         needGuidance={perms.needGuidance}
@@ -51,26 +52,36 @@ export function ViewerPage({ onBack }: { onBack: () => void }) {
       />
 
       {!connected ? (
-        <div className="pd-viewer-form">
-          <TextField label="对方会话码" value={sid} onChange={setSid} placeholder="如 pd-AB12C34" />
-          <TextField label="连接密码" value={password} onChange={setPassword} placeholder="一次性密码" type="password" />
-          <details className="pd-advanced">
-            <summary>高级设置</summary>
-            <div className="pd-advanced__body">
-              <TextField label="中继/VPS 地址" value={relay} onChange={setRelay} placeholder={DEFAULT_RELAY} />
-            </div>
-          </details>
-          <Button variant="primary" disabled={!sid || !password} onClick={() => session.connectAuto(relay, sid, password)}>
+        <div className="flex flex-col gap-4">
+          <p className="text-[13px] text-pd-muted">输入对方给的会话码和密码，程序会自动选择最优链路。</p>
+          <Card className="flex flex-col gap-4">
+            <TextField label="对方会话码" value={sid} onChange={setSid} placeholder="如 pd-AB12C34" autoComplete="off" spellCheck={false} />
+            <TextField label="连接密码" value={password} onChange={setPassword} placeholder="一次性密码" type="password" />
+          </Card>
+          <Button
+            variant="primary"
+            className="pd-btn--block"
+            size="lg"
+            disabled={!sid || !password || busy}
+            onClick={() => session.connectAuto(relay, sid, password)}
+          >
             {busy ? '连接中…' : '连接'}
           </Button>
-          {session.transport && <p className="pd-hint">传输路径：{session.transport}</p>}
-          {session.error && <p className="pd-error">{session.error}</p>}
+          <AdvancedPanel>
+            <TextField label="中继/VPS 地址" value={relay} onChange={setRelay} placeholder={DEFAULT_RELAY} />
+          </AdvancedPanel>
+          {session.transport && <p className="m-0 text-[13px] text-pd-muted">传输路径：{session.transport}</p>}
+          {session.error && (
+            <p className="m-0 rounded-pd border border-pd-danger/25 bg-pd-danger/10 px-3 py-2 text-[13px] text-pd-danger">
+              {session.error}
+            </p>
+          )}
         </div>
       ) : (
-        <div className="pd-viewer-active">
-          <div className="pd-toolbar">
-            <span className="pd-toolbar__addr">{sid}</span>
-            <span className="pd-hint">{session.transport ?? ''}</span>
+        <div className="flex min-h-0 flex-1 flex-col gap-3">
+          <div className="flex items-center gap-3 rounded-pd border border-pd-border bg-pd-elev py-2 pr-2.5 pl-3.5">
+            <span className="flex-1 font-mono text-sm font-semibold tracking-wide text-pd-fg">{sid}</span>
+            <span className="text-[13px] text-pd-muted">{session.transport ?? ''}</span>
             <Button variant="danger" size="sm" onClick={session.disconnect}>断开</Button>
           </div>
           <VideoView aspect={session.screen ?? undefined} />
