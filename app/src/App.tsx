@@ -37,7 +37,7 @@ export default function App() {
           requiredFor="both"
           onRequest={perms.request}
           onOpenSettings={perms.openSettings}
-          onRecheck={perms.recheck}
+          onRestart={perms.restart}
         />
       </div>
 

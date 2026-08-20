@@ -82,7 +82,7 @@ export function HostPage({ onBack }: { onBack: () => void }) {
         requiredFor="host"
         onRequest={perms.request}
         onOpenSettings={perms.openSettings}
-        onRecheck={perms.recheck}
+        onRestart={perms.restart}
       />
 
       {!active ? (

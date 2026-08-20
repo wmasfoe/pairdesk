@@ -59,7 +59,8 @@ pub fn run() {
             bridge::pd_send_input,
             bridge::pd_check_permissions,
             bridge::pd_request_permission,
-            bridge::pd_open_permission_settings
+            bridge::pd_open_permission_settings,
+            bridge::pd_restart_app
         ])
         .setup(|app| {
             selftest_from_env(app.handle());

@@ -11,7 +11,7 @@ interface PermissionBannerProps {
   requiredFor: 'host' | 'viewer' | 'both';
   onRequest: (type: 'screen' | 'accessibility') => void;
   onOpenSettings: (type: 'screen' | 'accessibility') => void;
-  onRecheck: () => void;
+  onRestart: () => void;
 }
 
 export function PermissionBanner({
@@ -21,7 +21,7 @@ export function PermissionBanner({
   requiredFor,
   onRequest,
   onOpenSettings,
-  onRecheck,
+  onRestart,
 }: PermissionBannerProps) {
   if (!needGuidance) return null;
 
@@ -82,9 +82,9 @@ export function PermissionBanner({
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-pd-border pt-2.5">
-        <span className="text-[13px] text-pd-muted">授权后切回 App 会自动刷新</span>
-        <Button size="sm" variant="ghost" onClick={onRecheck}>
-          已开启，刷新检测
+        <span className="text-[13px] text-pd-muted">macOS 会缓存权限结果，授权后需重启应用才能生效</span>
+        <Button size="sm" variant="ghost" onClick={onRestart}>
+          已授权，重启应用生效
         </Button>
       </div>
     </div>

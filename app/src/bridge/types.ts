@@ -68,6 +68,8 @@ export interface CoreBridge {
   requestPermission(type: 'screen' | 'accessibility'): Promise<boolean>;
   /** 打开系统权限设置 */
   openPermissionSettings(type: 'screen' | 'accessibility'): Promise<void>;
+  /** 重启应用（macOS 授权后需重启才能重新读到权限状态） */
+  restartApp(): void;
   /** 订阅核心事件流；返回取消订阅函数 */
   onEvent(cb: (e: CoreEvent) => void): () => void;
 }

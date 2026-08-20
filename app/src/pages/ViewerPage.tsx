@@ -48,7 +48,7 @@ export function ViewerPage({ onBack }: { onBack: () => void }) {
         requiredFor="viewer"
         onRequest={perms.request}
         onOpenSettings={perms.openSettings}
-        onRecheck={perms.recheck}
+        onRestart={perms.restart}
       />
 
       {!connected ? (

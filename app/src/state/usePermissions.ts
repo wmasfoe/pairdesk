@@ -54,10 +54,15 @@ export function usePermissions() {
     await getCoreBridge().openPermissionSettings(type);
   };
 
+  const restart = () => {
+    getCoreBridge().restartApp();
+  };
+
   return {
     ...status,
     loading,
     recheck: check,
+    restart,
     request,
     openSettings,
   };

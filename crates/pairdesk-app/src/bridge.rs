@@ -170,6 +170,14 @@ pub fn pd_open_permission_settings(permission_type: String) {
     pairdesk_core::permissions::open_permission_settings(&permission_type);
 }
 
+/// 重启应用：macOS 的 TCC 权限结果按进程缓存（AXIsProcessTrusted /
+/// CGPreflightScreenCaptureAccess 一旦在本进程读到 false 就持续返回 false），
+/// 授权后必须用全新进程重新查询 tccd 才能读到新状态。
+#[tauri::command]
+pub fn pd_restart_app(app: AppHandle) {
+    tauri::process::restart(&app.env());
+}
+
 // ---------- 自测模式（无头验证"壳 + 内核"全链路） ----------
 
 /// 自测：设置画面帧落盘目录。

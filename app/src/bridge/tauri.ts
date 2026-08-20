@@ -51,6 +51,9 @@ export function createTauriBridge(): CoreBridge {
     async openPermissionSettings(type) {
       await invoke('pd_open_permission_settings', { permissionType: type });
     },
+    restartApp() {
+      void invoke('pd_restart_app');
+    },
     onEvent(cb) {
       // 幂等注册：只在首次订阅时建立与后端的监听，多订阅方走 Set 分发
       if (!unlisten) {

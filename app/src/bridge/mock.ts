@@ -43,6 +43,9 @@ export function createMockBridge(): CoreBridge {
     async openPermissionSettings() {
       // mock 忽略
     },
+    restartApp() {
+      // mock 忽略
+    },
     onEvent(cb) {
       listeners.add(cb);
       return () => listeners.delete(cb);
