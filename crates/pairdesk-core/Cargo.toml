@@ -1,6 +1,6 @@
 [package]
 name = "pairdesk-core"
-version = "0.1.0"
+version = "0.1.19"
 edition = "2021"
 description = "PairDesk 核心引擎:两人 P2P 远程协助的协议/采集/编码/注入/会话"
 

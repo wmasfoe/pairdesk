@@ -1,6 +1,6 @@
 {
   "name": "@pairdesk/ui-kit",
-  "version": "0.1.0",
+  "version": "0.1.19",
   "private": true,
   "description": "PairDesk 基础 UI 组件库（与业务无关，纯 React + TS）",
   "type": "module",

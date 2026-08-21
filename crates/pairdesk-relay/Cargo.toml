@@ -1,6 +1,6 @@
 [package]
 name = "pairdesk-relay"
-version = "0.1.0"
+version = "0.1.19"
 edition = "2021"
 description = "PairDesk 中继服务器：信令牵线 + 透明桥接转发（独立部署于 VPS，不进客户端安装包）"
 

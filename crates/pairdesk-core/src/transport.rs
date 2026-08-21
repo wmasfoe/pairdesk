@@ -30,6 +30,10 @@ impl FrameStream for Connection {
     fn send_frame(&mut self, ty: FrameType, payload: &[u8]) -> Result<()> {
         Connection::send_frame(self, ty, payload)
     }
+    fn shutdown(&mut self) -> Result<()> {
+        let _ = self.stream.shutdown(std::net::Shutdown::Both);
+        Ok(())
+    }
     fn set_read_timeout(&mut self, d: Duration) -> Result<()> {
         Connection::set_read_timeout(self, d)
     }

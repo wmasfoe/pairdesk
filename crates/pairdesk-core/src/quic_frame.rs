@@ -22,6 +22,10 @@ pub trait FrameStream {
     fn recv_frame(&mut self) -> Result<Option<Frame>>;
     /// 发送一帧。
     fn send_frame(&mut self, ty: FrameType, payload: &[u8]) -> Result<()>;
+    /// 主动关闭/关闭底层连接（用于断开时使其他 clone 线程的读写立刻报错退出）。
+    fn shutdown(&mut self) -> Result<()> {
+        Ok(())
+    }
     /// 设置读超时（用于心跳断线检测）。QUIC 默认 no-op（其自带 idle timeout 兜底）。
     fn set_read_timeout(&mut self, _d: std::time::Duration) -> Result<()> {
         Ok(())

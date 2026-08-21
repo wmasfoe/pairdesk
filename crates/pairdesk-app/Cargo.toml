@@ -1,6 +1,6 @@
 [package]
 name = "pairdesk-app"
-version = "0.1.0"
+version = "0.1.19"
 description = "PairDesk 桌面壳（Tauri 2, 界面 + 内核粘合层）"
 edition = "2021"
 

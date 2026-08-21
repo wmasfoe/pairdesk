@@ -59,7 +59,7 @@ jobs:
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             VER="${GITHUB_REF_NAME#v}"
           else
-            VER="0.1.16"
+            VER="0.1.18"
           fi
           echo "Syncing version to $VER"
           # 替换 tauri.conf.json 中的 version
@@ -69,6 +69,14 @@ jobs:
             const j = JSON.parse(fs.readFileSync(p, 'utf8'));
             j.version = '$VER';
             fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+          "
+          # 同步更新 crates/pairdesk-app/Cargo.toml 中的 version (供 env!("CARGO_PKG_VERSION") 使用)
+          node -e "
+            const fs = require('fs');
+            const p = 'crates/pairdesk-app/Cargo.toml';
+            let c = fs.readFileSync(p, 'utf8');
+            c = c.replace(/^version = \"[^\"]+\"/m, 'version = \"$VER\"');
+            fs.writeFileSync(p, c);
           "
         shell: bash
 

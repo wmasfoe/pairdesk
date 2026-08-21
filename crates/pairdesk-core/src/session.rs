@@ -517,9 +517,10 @@ fn host_session_once<C: FrameStream + Send + 'static>(
         .spawn(move || -> Result<()> {
             let mut last_hb = Instant::now();
             loop {
-                match c_rx.lock().unwrap().recv_timeout(Duration::from_secs(5)) {
+                match c_rx.lock().unwrap().recv_timeout(Duration::from_secs(1)) {
                     Ok(ControlCommand::Stop) => {
                         let _ = c_conn.send_frame(FrameType::Goodbye, &[]);
+                        let _ = c_conn.shutdown();
                         c_running.store(false, Ordering::SeqCst);
                         let _ = c_tx.send(CoreEvent::PeerDisconnected);
                         break;
@@ -678,6 +679,7 @@ fn viewer_session_with_conn<C: FrameStream + Send + 'static>(
                 match s_rx.lock().unwrap().recv_timeout(Duration::from_secs(1)) {
                     Ok(ControlCommand::Stop) => {
                         let _ = send_conn.send_frame(FrameType::Goodbye, &[]);
+                        let _ = send_conn.shutdown();
                         s_running.store(false, Ordering::SeqCst);
                         let _ = s_tx.send(CoreEvent::PeerDisconnected);
                         break;
