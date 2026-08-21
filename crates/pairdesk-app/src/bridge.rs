@@ -315,6 +315,128 @@ pub fn pd_open_url(url: String) {
     let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
 }
 
+/// 应用内下载并自动安装更新
+#[tauri::command]
+pub async fn pd_install_update(app: AppHandle, download_url: String) -> Result<(), String> {
+    use futures_util::StreamExt;
+    use std::io::Write;
+
+    if download_url.is_empty() {
+        return Err("下载地址为空".into());
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent("PairDesk-App")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let res = client
+        .get(&download_url)
+        .send()
+        .await
+        .map_err(|e| format!("请求安装包失败: {e}"))?;
+
+    if !res.status().is_success() {
+        return Err(format!("下载失败，状态码: {}", res.status()));
+    }
+
+    let total_size = res.content_length().unwrap_or(0);
+    let mut downloaded: u64 = 0;
+
+    let temp_dir = std::env::temp_dir();
+    let file_ext = if cfg!(target_os = "macos") {
+        "dmg"
+    } else if cfg!(target_os = "windows") {
+        "msi"
+    } else {
+        "AppImage"
+    };
+
+    let temp_file_path = temp_dir.join(format!("pairdesk-update-latest.{}", file_ext));
+    let mut file = std::fs::File::create(&temp_file_path)
+        .map_err(|e| format!("创建临时安装文件失败: {e}"))?;
+
+    let mut stream = res.bytes_stream();
+    while let Some(chunk_res) = stream.next().await {
+        let chunk = chunk_res.map_err(|e| format!("读取下载数据流失败: {e}"))?;
+        file.write_all(&chunk)
+            .map_err(|e| format!("写入安装包数据失败: {e}"))?;
+        downloaded += chunk.len() as u64;
+
+        let percent = if total_size > 0 {
+            (downloaded as f64 / total_size as f64 * 100.0) as u32
+        } else {
+            0
+        };
+
+        let _ = app.emit("update://progress", serde_json::json!({
+            "downloaded": downloaded,
+            "total": total_size,
+            "percent": percent,
+        }));
+    }
+    drop(file);
+
+    let _ = app.emit("update://installing", ());
+
+    // 执行平台特定的覆写安装
+    #[cfg(target_os = "macos")]
+    {
+        let script = format!(
+            r#"
+            MOUNT=$(hdiutil attach -nobrowse -readonly "{dmg}" | tail -1 | awk '{{print $NF}}')
+            if [ -n "$MOUNT" ]; then
+                rm -rf "/Applications/PairDesk.app"
+                cp -R "$MOUNT/PairDesk.app" /Applications/
+                codesign --force --deep --sign - "/Applications/PairDesk.app" 2>/dev/null || true
+                xattr -dr com.apple.quarantine "/Applications/PairDesk.app" 2>/dev/null || true
+                hdiutil detach "$MOUNT" -quiet 2>/dev/null || true
+                rm -f "{dmg}"
+                open "/Applications/PairDesk.app"
+            fi
+            "#,
+            dmg = temp_file_path.display()
+        );
+
+        // 启动后台 shell 脚本在退出后执行覆写并重启应用
+        std::process::Command::new("bash")
+            .arg("-c")
+            .arg(&script)
+            .spawn()
+            .map_err(|e| format!("启动 macOS 更新脚本失败: {e}"))?;
+
+        // 退出当前应用以释放旧二进制文件
+        app.exit(0);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let msi_path = temp_file_path.display().to_string();
+        std::process::Command::new("msiexec")
+            .args(["/i", &msi_path, "/quiet", "/norestart"])
+            .spawn()
+            .map_err(|e| format!("启动 Windows MSI 安装失败: {e}"))?;
+
+        app.exit(0);
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(mut perms) = std::fs::metadata(&temp_file_path).map(|m| m.permissions()) {
+            perms.set_mode(0o755);
+            let _ = std::fs::set_permissions(&temp_file_path, perms);
+        }
+        std::process::Command::new(&temp_file_path)
+            .spawn()
+            .map_err(|e| format!("启动新版 Linux 客户端失败: {e}"))?;
+
+        app.exit(0);
+    }
+
+    Ok(())
+}
+
 /// 重启应用：macOS 的 TCC 权限结果按进程缓存（AXIsProcessTrusted /
 /// CGPreflightScreenCaptureAccess 一旦在本进程读到 false 就持续返回 false），
 /// 授权后必须用全新进程重新查询 tccd 才能读到新状态。

@@ -55,11 +55,17 @@ export function createMockBridge(): CoreBridge {
     async checkUpdate() {
       return {
         currentVersion: '0.1.16',
-        latestVersion: '0.1.16',
-        hasUpdate: false,
-        releaseNotes: '当前已是最新版本',
+        latestVersion: '0.1.17',
+        hasUpdate: true,
+        releaseNotes: '支持应用内静默下载更新',
         downloadUrl: 'https://github.com/wmasfoe/pairdesk/releases/latest',
       };
+    },
+    async installUpdate(_url, onProgress) {
+      if (onProgress) {
+        onProgress({ downloaded: 50, total: 100, percent: 50 });
+        setTimeout(() => onProgress({ downloaded: 100, total: 100, percent: 100 }), 500);
+      }
     },
     async openUrl(url) {
       window.open(url, '_blank');

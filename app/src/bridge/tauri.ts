@@ -73,6 +73,20 @@ export function createTauriBridge(): CoreBridge {
         downloadUrl: res.download_url,
       };
     },
+    async installUpdate(downloadUrl, onProgress) {
+      let unlisten: (() => void) | null = null;
+      if (onProgress) {
+        const fn = await listen<{ downloaded: number; total: number; percent: number }>('update://progress', (e) => {
+          onProgress(e.payload);
+        });
+        unlisten = fn;
+      }
+      try {
+        await invoke('pd_install_update', { downloadUrl });
+      } finally {
+        if (unlisten) unlisten();
+      }
+    },
     async openUrl(url) {
       await invoke('pd_open_url', { url });
     },

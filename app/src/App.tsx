@@ -11,13 +11,16 @@ import { ViewerPage } from './pages/ViewerPage';
 import { usePermissions } from './state/usePermissions';
 import { PermissionBanner } from './components/PermissionBanner';
 import { Brand } from './components/Brand';
+import { UpdateModal } from './components/UpdateModal';
 import { IconMonitor, IconPointer } from './components/icons';
+import type { UpdateInfo } from './bridge/types';
 
 type Mode = null | 'host' | 'viewer';
 
 export default function App() {
   const [mode, setMode] = useState<Mode>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [updateMsg, setUpdateMsg] = useState<string | null>(null);
   const perms = usePermissions();
 
@@ -27,10 +30,7 @@ export default function App() {
     try {
       const info = await getCoreBridge().checkUpdate();
       if (info.hasUpdate) {
-        setUpdateMsg(`发现新版本 v${info.latestVersion}！`);
-        if (window.confirm(`发现新版本 v${info.latestVersion} (当前 v${info.currentVersion})，是否前往下载？`)) {
-          await getCoreBridge().openUrl(info.downloadUrl);
-        }
+        setUpdateInfo(info);
       } else {
         setUpdateMsg(`当前已是最新版本 (v${info.currentVersion})`);
       }
@@ -93,6 +93,13 @@ export default function App() {
           <p className="m-0 text-[12px] text-pd-primary">{updateMsg}</p>
         )}
       </div>
+
+      {updateInfo && (
+        <UpdateModal
+          info={updateInfo}
+          onClose={() => setUpdateInfo(null)}
+        />
+      )}
     </div>
   );
 }

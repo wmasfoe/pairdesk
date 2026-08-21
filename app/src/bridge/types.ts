@@ -64,6 +64,12 @@ export interface UpdateInfo {
   downloadUrl: string;
 }
 
+export interface UpdateProgress {
+  downloaded: number;
+  total: number;
+  percent: number;
+}
+
 /** 桥接层对前端暴露的统一接口（业务层只依赖这个接口） */
 export interface CoreBridge {
   /** 设置"允许远程控制"总开关（关掉则拒绝起被控端） */
@@ -88,6 +94,8 @@ export interface CoreBridge {
   openPermissionSettings(type: 'screen' | 'accessibility'): Promise<void>;
   /** 检查应用更新 */
   checkUpdate(): Promise<UpdateInfo>;
+  /** 应用内下载并安装更新 */
+  installUpdate(downloadUrl: string, onProgress?: (p: UpdateProgress) => void): Promise<void>;
   /** 打开指定 URL */
   openUrl(url: string): Promise<void>;
   /** 重启应用（macOS 授权后需重启才能重新读到权限状态） */
