@@ -3,7 +3,7 @@
 #  场景A: host 走 auto(QUIC+中继) → viewer auto 应自动选 QUIC 打洞直连
 #  场景B: host 仅中继(无 QUIC server) → viewer auto 自动降级到中继兜底
 set -uo pipefail
-cd /home/debian/code/pairdesk
+cd "$(dirname "$0")/.." || cd /home/ikun/code/pairdesk
 BIN=./target/debug/pairdesk
 export HOME=/tmp/pd-quic-home; rm -rf "$HOME"
 RELAY_PORT=8977; SID=autosess; PASS=autosec1; HOLE=8889; DISPLAY_NUM=:99

@@ -3,7 +3,7 @@
 # 模拟"异网打洞成功后的 P2P 直连"(本机双进程)。帧协议与 TCP/中继完全互通。
 set -uo pipefail
 
-cd /home/debian/code/pairdesk
+cd "$(dirname "$0")/.." || cd /home/ikun/code/pairdesk
 BIN=./target/debug/pairdesk
 # 双进程共享同一身份证书目录(模拟同机两端；真实跨机靠信令交换公钥)
 export HOME=/tmp/pd-quic-home

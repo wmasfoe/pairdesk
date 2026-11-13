@@ -21,7 +21,7 @@ use crate::input::{InputInjector, PlatformInjector};
 use crate::protocol::*;
 use crate::quic_frame::FrameStream;
 use crate::relay;
-use crate::transport::{accept_once, connect, Connection};
+use crate::transport::{accept_once, connect};
 use crate::{ControlCommand, CoreEvent, Quality};
 
 /// 读超时：超过心跳间隔即可（越大越省电，越小断线越快）
@@ -70,7 +70,7 @@ pub fn spawn_viewer(
 
 // ---------- 中继模式（经 pairdesk-relay 建立连接） ----------
 
-/// 被控端经中继登记：连 relay → 注册 sid(+打洞端口) → 等 viewer，随后走单会话。
+/// 被控端经中继登记：连 relay → 注册 sid → 等 viewer，随后走单会话。
 /// 会话结束后自动重新注册继续等待下一个 viewer（被控端常驻），收到 Stop 才退出。
 pub fn spawn_host_via_relay(
     relay: SocketAddr,
@@ -93,7 +93,7 @@ pub fn spawn_host_via_relay(
                 }
                 let result = (|| -> Result<()> {
                     eprintln!("[host-relay] 正在向中继注册: relay={}, sid={}, hole_port={}", relay, sid, hole_port);
-                    let conn = relay::register_host(relay, &sid, hole_port)?;
+                    let (conn, _) = relay::register_host(relay, &sid, "")?;
                     eprintln!("[host-relay] 中继注册成功，等待控制端连入…");
                     let _ = host_session_once(conn, &password, &event_tx, &cmd_rx);
                     // 会话结束：正常返回继续等待下一个 viewer
@@ -117,7 +117,7 @@ pub fn spawn_host_via_relay(
     Ok((h, event_rx))
 }
 
-/// 控制端经中继匹配：连 relay → 按 sid 匹配 host → 拿打洞端点 → 走握手。
+/// 控制端经中继匹配：连 relay → 按 sid 匹配 host → 走握手。
 pub fn spawn_viewer_via_relay(
     relay: SocketAddr,
     sid: String,
@@ -132,9 +132,11 @@ pub fn spawn_viewer_via_relay(
         .spawn(move || {
             let result = (|| -> Result<()> {
                 eprintln!("[viewer-relay] 正在通过中继匹配 host: relay={}, sid={}", relay, sid);
-                let (conn, hole) = relay::connect_viewer(relay, &sid)?;
-                eprintln!("[viewer-relay] 中继匹配成功，拿到打洞端点: {}", hole);
-                let _ = event_tx.send(CoreEvent::SignalHole(hole)); // 上报打洞端点(供后续 QUIC 直连)
+                let (conn, holes) = relay::connect_viewer(relay, &sid, "")?;
+                eprintln!("[viewer-relay] 中继匹配成功，拿到打洞候选端点: {:?}", holes);
+                if let Some(first) = holes.first() {
+                    let _ = event_tx.send(CoreEvent::SignalHole(*first));
+                }
                 viewer_session_with_conn(conn, &password, &event_tx, &cmd_rx)
             })();
             if let Err(e) = result {
@@ -247,7 +249,7 @@ fn identity_dir() -> std::path::PathBuf {
         .unwrap_or_else(|_| "/tmp/pd-quic".into())
 }
 
-// ---------- 自动择一（用户只给 relay+sid+密码，系统无感择优） ----------
+// ---------- 自动择一（Tailscale 模式：STUN + 双向对称打洞直连，超时平滑走中继兜底） ----------
 
 /// 从 start 起找空闲 UDP 端口（探测后立即释放，最多顺延 20 个）。
 /// 全部被占则返回 start（后续绑定会如实报错，由调用方兜底提示）。
@@ -260,8 +262,12 @@ pub fn find_free_udp_port(start: u16) -> u16 {
     start
 }
 
-/// 被控端自动就绪：同时起 QUIC 打洞 server + 中继注册，任一被连即成为会话。
-/// 返回主句柄(命令广播到各路子会话)与聚合事件流。
+/// 被控端自动就绪（方案 B）：
+/// 1. 绑定打洞端口并向 Relay 发起 STUN 探测；
+/// 2. 收集公网反射端点与内网网卡候选端点；
+/// 3. 向 Relay 登记并等待 Viewer；
+/// 4. Viewer 连入后双方同时启动双向对称打洞 (1.5s)；
+/// 5. 打洞成功走 QUIC 直连；打洞未穿透无缝降级走中继兜底。
 pub fn spawn_host_auto(
     relay: SocketAddr,
     sid: String,
@@ -269,8 +275,6 @@ pub fn spawn_host_auto(
     password: String,
 ) -> Result<(crate::CoreHandle, Receiver<CoreEvent>)> {
     let (event_tx, event_rx) = channel();
-    // 端口被占时自动顺延找空闲端口：QUIC 打洞与中继注册用同一实际端口，
-    // 保证"打洞失败 → 中继兜底"不因端口冲突而连环出错。
     let port = find_free_udp_port(hole_port);
     if port != hole_port {
         let _ = event_tx.send(CoreEvent::Notice(format!(
@@ -282,43 +286,83 @@ pub fn spawn_host_auto(
     let cmd_rx = Arc::new(Mutex::new(cmd_rx));
     let h = crate::CoreHandle::from_tx(cmd_tx);
 
-    // 两路子会话各自就绪（QUIC 打洞 + 中继兜底）
-    eprintln!("[host] 启动自动被控端: sid={}, relay={}, hole_port={}", sid, relay, port);
-    let (qh, qrx) = spawn_host_via_quic(port, password.clone())?;
-    let (rh, rrx) = spawn_host_via_relay(relay, sid, port, password)?;
+    let event_tx_clone = event_tx.clone();
+    let cmd_rx_clone = Arc::clone(&cmd_rx);
+    thread::Builder::new()
+        .name("pairdesk-host-auto".into())
+        .spawn(move || {
+            loop {
+                if let Ok(ControlCommand::Stop) = cmd_rx_clone.lock().unwrap().try_recv() {
+                    eprintln!("[host-auto] 收到停止命令，退出常驻循环");
+                    break;
+                }
+                let result = (|| -> Result<()> {
+                    // 1. 绑定 UDP 打洞 Socket
+                    let sock = std::net::UdpSocket::bind(("0.0.0.0", port))?;
+                    let mut candidates = Vec::new();
 
-    // 子事件 → 主事件聚合
-    let e1 = event_tx.clone();
-    thread::Builder::new().name("host-auto-fwd-q".into()).spawn(move || {
-        for e in qrx {
-            if e1.send(e).is_err() {
-                break;
+                    // 2. STUN 探测公网端点
+                    if let Ok(mapped) = crate::punch::stun_probe(&sock, relay, Duration::from_millis(800)) {
+                        eprintln!("[host-auto] STUN 探测成功，获取公网反射端点: {}", mapped);
+                        candidates.push(mapped);
+                    }
+                    for local in crate::punch::collect_local_candidates(port) {
+                        candidates.push(local);
+                    }
+                    candidates.dedup();
+                    let cands_str = crate::punch::serialize_candidates(&candidates);
+
+                    eprintln!("[host-auto] 正在向中继注册: relay={}, sid={}, cands=[{}]", relay, sid, cands_str);
+                    let (relay_conn, viewer_cands) = relay::register_host(relay, &sid, &cands_str)?;
+                    eprintln!("[host-auto] 中继匹配成功，收到控制端打洞端点: {:?}", viewer_cands);
+
+                    // 3. 执行双向对称打洞 (1.5s)
+                    let token = crate::punch::derive_punch_token(&sid, &password);
+                    eprintln!("[host-auto] 启动双向对称打洞 (1.5s 超时)…");
+                    match crate::punch::disco_punch(&sock, &viewer_cands, &token, Duration::from_millis(1500)) {
+                        Ok(verified_peer) => {
+                            eprintln!("[host-auto] ✅ 双向打洞穿透成功 (对端={})，切换为 QUIC 直连链路！", verified_peer);
+                            let _ = event_tx_clone.send(CoreEvent::Transport("QUIC 打洞直连".into()));
+                            match wrap_host_quic_stream(sock) {
+                                Ok(fs) => host_session_once(fs, &password, &event_tx_clone, &cmd_rx_clone),
+                                Err(e) => {
+                                    eprintln!("[host-auto] ⚠️ QUIC 握手异常 ({})，自动降级走中继兜底！", e);
+                                    let _ = event_tx_clone.send(CoreEvent::Transport(format!("中继兜底 ({})", e)));
+                                    host_session_once(relay_conn, &password, &event_tx_clone, &cmd_rx_clone)
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("[host-auto] ⚠️ 打洞未穿透 ({})，平滑降级走中继兜底！", e);
+                            let _ = event_tx_clone.send(CoreEvent::Transport("中继兜底".into()));
+                            host_session_once(relay_conn, &password, &event_tx_clone, &cmd_rx_clone)
+                        }
+                    }
+                })();
+                match result {
+                    Ok(()) => {
+                        eprintln!("[host-auto] 会话结束，重新就绪等待下一个 viewer…");
+                        continue;
+                    }
+                    Err(e) => {
+                        eprintln!("[host-auto] 出现错误: {}", e);
+                        let _ = event_tx_clone.send(CoreEvent::Error(format!("自动被控端: {}", e)));
+                        thread::sleep(Duration::from_secs(2));
+                        continue;
+                    }
+                }
             }
-        }
-    })?;
-    thread::Builder::new().name("host-auto-fwd-r".into()).spawn(move || {
-        for e in rrx {
-            if event_tx.send(e).is_err() {
-                break;
-            }
-        }
-    })?;
-    // 主命令 → 广播到两路
-    let cmd_rx = Arc::clone(&cmd_rx);
-    thread::Builder::new().name("host-auto-cmd".into()).spawn(move || loop {
-        let c = match cmd_rx.lock().unwrap().recv() {
-            Ok(c) => c,
-            Err(_) => break,
-        };
-        let _ = qh.tx().send(c.clone());
-        let _ = rh.tx().send(c);
-    })?;
+        })?;
 
     Ok((h, event_rx))
 }
 
-/// 控制端自动择一：经 relay 信令拿打洞端点 → 先试 QUIC 打洞直连，
-/// 失败自动降级到中继兜底（对用户无感）。
+/// 控制端自动择一（方案 B）：
+/// 1. 绑定打洞端口并向 Relay 发起 STUN 探测；
+/// 2. 收集公网反射端点与内网网卡候选端点；
+/// 3. 向 Relay 换取 Host 候选端点并双向推送信令；
+/// 4. 双方同时启动双向对称打洞 (1.5s)；
+/// 5. 打洞成功走 QUIC 直连；打洞未穿透无缝降级走中继兜底。
 pub fn spawn_viewer_auto(
     relay: SocketAddr,
     sid: String,
@@ -332,20 +376,48 @@ pub fn spawn_viewer_auto(
         .name("pairdesk-viewer-auto".into())
         .spawn(move || {
             let result = (|| -> Result<()> {
-                eprintln!("[viewer-auto] 正在通过中继匹配 host: relay={}, sid={}", relay, sid);
-                let (relay_conn, hole) = relay::connect_viewer(relay, &sid)?;
-                eprintln!("[viewer-auto] 中继匹配成功，拿到对端打洞端点: {}", hole);
-                // ① 先试 QUIC 打洞直连
-                eprintln!("[viewer-auto] 尝试 QUIC 打洞直连 (4s 超时)…");
-                match try_quic_connect(hole) {
-                    Ok(fs) => {
-                        eprintln!("[viewer-auto] ✅ QUIC 打洞直连成功，切换为主链路！");
+                // 1. 绑定打洞 UDP Socket
+                let sock = std::net::UdpSocket::bind("0.0.0.0:0")?;
+                let bound_port = sock.local_addr()?.port();
+                let mut candidates = Vec::new();
+
+                // 2. STUN 探测公网端点
+                if let Ok(mapped) = crate::punch::stun_probe(&sock, relay, Duration::from_millis(800)) {
+                    eprintln!("[viewer-auto] STUN 探测成功，获取公网反射端点: {}", mapped);
+                    candidates.push(mapped);
+                }
+                for local in crate::punch::collect_local_candidates(bound_port) {
+                    candidates.push(local);
+                }
+                candidates.dedup();
+                let cands_str = crate::punch::serialize_candidates(&candidates);
+
+                eprintln!("[viewer-auto] 正在通过中继匹配 host: relay={}, sid={}, cands=[{}]", relay, sid, cands_str);
+                let (relay_conn, host_cands) = relay::connect_viewer(relay, &sid, &cands_str)?;
+                eprintln!("[viewer-auto] 中继匹配成功，拿到被控端候选端点: {:?}", host_cands);
+                if let Some(first) = host_cands.first() {
+                    let _ = event_tx.send(CoreEvent::SignalHole(*first));
+                }
+
+                // 3. 执行双向对称打洞 (1.5s)
+                let token = crate::punch::derive_punch_token(&sid, &password);
+                eprintln!("[viewer-auto] 尝试双向对称打洞 (1.5s 超时)…");
+                match crate::punch::disco_punch(&sock, &host_cands, &token, Duration::from_millis(1500)) {
+                    Ok(verified_peer) => {
+                        eprintln!("[viewer-auto] ✅ 双向打洞穿透成功 (对端={})，切换为 QUIC 直连链路！", verified_peer);
                         let _ = event_tx.send(CoreEvent::Transport("QUIC 打洞直连".into()));
-                        viewer_session_with_conn(fs, &password, &event_tx, &cmd_rx)
+                        match wrap_viewer_quic_stream(sock, verified_peer) {
+                            Ok(fs) => viewer_session_with_conn(fs, &password, &event_tx, &cmd_rx),
+                            Err(e) => {
+                                eprintln!("[viewer-auto] ⚠️ QUIC 握手异常 ({})，自动降级走中继兜底！", e);
+                                let _ = event_tx.send(CoreEvent::Transport(format!("中继兜底 ({})", e)));
+                                viewer_session_with_conn(relay_conn, &password, &event_tx, &cmd_rx)
+                            }
+                        }
                     }
                     Err(e) => {
-                        eprintln!("[viewer-auto] ⚠️ QUIC 打洞未成功 ({})，自动降级走中继兜底！", e);
-                        let _ = event_tx.send(CoreEvent::Transport(format!("中继兜底 ({})", e)));
+                        eprintln!("[viewer-auto] ⚠️ 打洞未穿透 ({})，平滑降级走中继兜底！", e);
+                        let _ = event_tx.send(CoreEvent::Transport("中继兜底".into()));
                         viewer_session_with_conn(relay_conn, &password, &event_tx, &cmd_rx)
                     }
                 }
@@ -358,21 +430,53 @@ pub fn spawn_viewer_auto(
     Ok((h, event_rx))
 }
 
-/// 尝试以 QUIC 直连到打洞端点（带超时），成功返回同步帧流。
-fn try_quic_connect(hole: SocketAddr) -> Result<crate::quic_frame::QuicFrameStream> {
+/// 包装已打洞完成的 UDP Socket 为 QUIC 服务端帧流
+fn wrap_host_quic_stream(sock: std::net::UdpSocket) -> Result<crate::quic_frame::QuicFrameStream> {
+    let id = crate::certs::ensure_identity(&identity_dir())?;
+    let rt = Arc::new(tokio::runtime::Runtime::new()?);
+    let (send, recv) = rt.block_on(async move {
+        let runtime = quinn::default_runtime().ok_or_else(|| anyhow::anyhow!("no async runtime found"))?;
+        let server = quinn::Endpoint::new(
+            quinn::EndpointConfig::default(),
+            Some(crate::certs::server_quic_config(&id)?),
+            sock,
+            runtime,
+        )?;
+        let inc = tokio::time::timeout(Duration::from_secs(3), server.accept())
+            .await
+            .map_err(|_| anyhow::anyhow!("等待对端 QUIC 连接超时"))?
+            .ok_or_else(|| anyhow::anyhow!("QUIC server 关闭"))?;
+        let conn = inc.await?;
+        conn.accept_bi().await.map_err(anyhow::Error::from)
+    })?;
+    Ok(crate::quic_frame::QuicFrameStream::new(rt, send, recv))
+}
+
+/// 包装已打洞完成的 UDP Socket 为 QUIC 客户端帧流并连向对端
+fn wrap_viewer_quic_stream(
+    sock: std::net::UdpSocket,
+    peer_addr: SocketAddr,
+) -> Result<crate::quic_frame::QuicFrameStream> {
     let id = crate::certs::ensure_identity(&identity_dir())?;
     let cfg = crate::certs::client_quic_config(&id)?;
     let rt = Arc::new(tokio::runtime::Runtime::new()?);
-    let res = rt.block_on(async {
-        tokio::time::timeout(Duration::from_secs(4), async {
-            let mut ep = quinn::Endpoint::client("0.0.0.0:0".parse()?)?;
-            ep.set_default_client_config(cfg);
-            let conn = ep.connect(hole, "pairdesk.local")?.await?;
-            conn.open_bi().await.map_err(anyhow::Error::from)
+    let (send, recv) = rt.block_on(async move {
+        let runtime = quinn::default_runtime().ok_or_else(|| anyhow::anyhow!("no async runtime found"))?;
+        let mut ep = quinn::Endpoint::new(
+            quinn::EndpointConfig::default(),
+            None,
+            sock,
+            runtime,
+        )?;
+        ep.set_default_client_config(cfg);
+        let conn = tokio::time::timeout(Duration::from_secs(3), async {
+            let connecting = ep.connect(peer_addr, "pairdesk.local")?;
+            connecting.await.map_err(anyhow::Error::from)
         })
         .await
-    });
-    let (send, recv) = res.map_err(|_| anyhow::anyhow!("QUIC 打洞超时"))??;
+        .map_err(|_| anyhow::anyhow!("QUIC 直连握手超时"))??;
+        conn.open_bi().await.map_err(anyhow::Error::from)
+    })?;
     Ok(crate::quic_frame::QuicFrameStream::new(rt, send, recv))
 }
 

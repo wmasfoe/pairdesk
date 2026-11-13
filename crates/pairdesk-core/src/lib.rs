@@ -9,6 +9,7 @@ pub mod encode;
 pub mod input;
 pub mod permissions;
 pub mod protocol;
+pub mod punch;
 pub mod quic_frame;
 pub mod relay;
 pub mod session;

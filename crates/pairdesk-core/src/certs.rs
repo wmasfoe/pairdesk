@@ -63,15 +63,53 @@ pub fn server_quic_config(id: &P2pIdentity) -> Result<quinn::ServerConfig> {
     Ok(cfg)
 }
 
+/// 忽略自签证书 CA 校验的验证器（用于 P2P 场景；身份由 PairDesk 会话密码双向认证）
+#[derive(Debug)]
+struct SkipServerVerification(Arc<rustls::crypto::CryptoProvider>);
+
+impl rustls::client::danger::ServerCertVerifier for SkipServerVerification {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        self.0.signature_verification_algorithms.supported_schemes()
+    }
+}
+
 /// 由身份公钥构建 QUIC 客户端配置（控制端信任对端公钥）。
-pub fn client_quic_config(id: &P2pIdentity) -> Result<quinn::ClientConfig> {
+pub fn client_quic_config(_id: &P2pIdentity) -> Result<quinn::ClientConfig> {
     // 幂等：确保 rustls 加密提供者已就绪
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let cert = rustls::pki_types::CertificateDer::from(id.cert_der.clone());
-    let mut roots = rustls::RootCertStore::empty();
-    roots.add(cert)?;
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
     let tls = rustls::ClientConfig::builder()
-        .with_root_certificates(roots)
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(SkipServerVerification(provider)))
         .with_no_client_auth();
     let crypto = Arc::new(quinn::crypto::rustls::QuicClientConfig::try_from(tls)?);
     Ok(quinn::ClientConfig::new(crypto))

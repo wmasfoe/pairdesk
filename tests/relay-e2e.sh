@@ -6,7 +6,7 @@
 # 这证明透明桥接不解析协议，客户端现有握手/加密/画面/输入全链路在中继下照常。
 set -uo pipefail
 
-cd /home/debian/code/pairdesk
+cd "$(dirname "$0")/.." || cd /home/ikun/code/pairdesk
 BIN=./target/debug/pairdesk
 RELAY=./target/debug/pairdesk-relay
 RELAY_PORT=8989
