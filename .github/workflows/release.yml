@@ -13,6 +13,11 @@ on:
     branches: [main]
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing tag to build and publish (leave empty for build only)'
+        required: false
+        type: string
 
 permissions:
   contents: write   # publish 需要创建 GitHub Release / 上传 asset
@@ -24,9 +29,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-14, windows-2022]
+        os: [ubuntu-22.04, macos-15, windows-2022]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
 
       # ---- Linux 系统依赖（Tauri webkit）----
       - name: Install Linux deps
@@ -55,9 +62,11 @@ jobs:
 
       # ---- 同步版本号（从 tag 或 commit 提取版本更新到 tauri.conf.json / package.json / Cargo.toml）----
       - name: Sync version
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || '' }}
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            VER="${GITHUB_REF_NAME#v}"
+          if [[ "$RELEASE_TAG" == v* ]]; then
+            VER="${RELEASE_TAG#v}"
           else
             VER="$(node -p "require('./crates/pairdesk-app/tauri.conf.json').version")"
           fi
@@ -156,7 +165,7 @@ jobs:
 
   release:
     name: publish
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -173,14 +182,15 @@ jobs:
           FILES=$(printf '%s\n%s\n' "$CLI" "$PKG" | sort -u)
           echo "发布文件:"; echo "$FILES"
           # publish job 未 checkout(无 .git)，必须显式 --repo，否则 gh 报 "not a git repository"
-          if gh release view "$GITHUB_REF_NAME" --repo wmasfoe/pairdesk >/dev/null 2>&1; then
+          if gh release view "$RELEASE_TAG" --repo wmasfoe/pairdesk >/dev/null 2>&1; then
             # release 已存在：直接上传/覆盖资产（gh release edit 不接受文件参数）
-            gh release upload "$GITHUB_REF_NAME" --repo wmasfoe/pairdesk --clobber $FILES
+            gh release upload "$RELEASE_TAG" --repo wmasfoe/pairdesk --clobber $FILES
           else
-            gh release create "$GITHUB_REF_NAME" --repo wmasfoe/pairdesk \
-              --title "PairDesk $GITHUB_REF_NAME" \
-              --generate-notes \
+            gh release create "$RELEASE_TAG" --repo wmasfoe/pairdesk \
+              --title "PairDesk $RELEASE_TAG" \
+              --verify-tag --generate-notes \
               $FILES
           fi
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
