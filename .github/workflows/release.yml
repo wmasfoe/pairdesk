@@ -59,7 +59,7 @@ jobs:
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             VER="${GITHUB_REF_NAME#v}"
           else
-            VER="0.1.18"
+            VER="$(node -p "require('./crates/pairdesk-app/tauri.conf.json').version")"
           fi
           echo "Syncing version to $VER"
           # 替换 tauri.conf.json 中的 version
