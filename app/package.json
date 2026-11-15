@@ -1,6 +1,6 @@
 {
   "name": "@pairdesk/app",
-  "version": "0.1.20",
+  "version": "0.1.21",
   "private": true,
   "type": "module",
   "description": "PairDesk 用户界面层（业务页面，依赖 @pairdesk/ui-kit）",
