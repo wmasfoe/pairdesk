@@ -87,9 +87,12 @@ fn run_host(args: &[String]) -> anyhow::Result<()> {
     let fps: u32 = a.get("fps").and_then(|v| v.parse().ok()).unwrap_or(20);
     let jpeg: u8 = a.get("jpeg").and_then(|v| v.parse().ok()).unwrap_or(75);
     // 中继模式：提供 --relay <地址> 与 --sid <会话码> 时走中继，否则直连
-    let relay_opt = a
-        .get("relay")
-        .map(|s| s.parse::<std::net::SocketAddr>().map_err(|e| anyhow::anyhow!(e)));
+    let relay_opt = a.get("relay").map(|s| {
+        use std::net::ToSocketAddrs;
+        s.to_socket_addrs()
+            .map_err(|e| anyhow::anyhow!("中继地址解析失败 {}: {}", s, e))
+            .and_then(|mut iter| iter.next().ok_or_else(|| anyhow::anyhow!("未解析出有效中继地址: {}", s)))
+    });
     let sid_opt = a.get("sid").cloned();
     // 打洞 QUIC 端口（被控端用它接收异网直连；可选，默认 23517）
     let hole_port: u16 = a.get("hole-port").and_then(|v| v.parse().ok()).unwrap_or(23517);
@@ -159,8 +162,10 @@ fn run_viewer(args: &[String]) -> anyhow::Result<()> {
     let test_input = a.get("test-input").cloned();
     // 中继相关参数（auto/quic 模式都可用）
     let relay_opt = a.get("relay").map(|s| {
-        s.parse::<std::net::SocketAddr>()
-            .map_err(|e| anyhow::anyhow!(e))
+        use std::net::ToSocketAddrs;
+        s.to_socket_addrs()
+            .map_err(|e| anyhow::anyhow!("中继地址解析失败 {}: {}", s, e))
+            .and_then(|mut iter| iter.next().ok_or_else(|| anyhow::anyhow!("未解析出有效中继地址: {}", s)))
     });
     let sid_opt = a.get("sid").cloned();
     // 自动择一模式：connect --relay --sid --auto（先 QUIC 打洞，失败自动中继兜底）

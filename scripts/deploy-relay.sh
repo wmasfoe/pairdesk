@@ -65,8 +65,8 @@ systemctl enable "pairdesk-relay@${PORT}" --now
 echo "==> [4/4] 验证"
 sleep 1
 systemctl --no-pager --lines=5 status "pairdesk-relay@${PORT}" || true
-if ss -ltn 2>/dev/null | grep -q ":${PORT} "; then
-  echo "✅ relay 已监听 :${PORT}"
+if ss -ltun 2>/dev/null | grep -q ":${PORT} "; then
+  echo "✅ relay 已监听 :${PORT} (TCP 信令/中继 + UDP STUN)"
 else
   echo "⚠️ 未检测到端口监听，请看上面状态输出排查（也可能 ss 未安装）"
 fi
@@ -80,5 +80,7 @@ echo "    公网地址:  ${PUBLIC_IP}:${PORT}"
 echo "    服务:      systemctl status pairdesk-relay@${PORT}"
 echo "    日志:      journalctl -u pairdesk-relay@${PORT} -f"
 echo "  客户端填写:  被控端与控制端的「中继/VPS 地址」都填 ${PUBLIC_IP}:${PORT}"
-echo "  防火墙:      若 VPS 有 ufw/firewalld，放行: ufw allow ${PORT}/tcp"
+echo "  防火墙:      若 VPS 有防火墙，请务必同时放行 TCP 与 UDP 端口:"
+echo "               ufw:        sudo ufw allow ${PORT}/tcp && sudo ufw allow ${PORT}/udp"
+echo "               firewalld:  sudo firewall-cmd --permanent --add-port=${PORT}/tcp --add-port=${PORT}/udp && sudo firewall-cmd --reload"
 echo "==============================================="

@@ -122,12 +122,38 @@ fn handle_client(mut stream: TcpStream, pool: &HostPool) -> Result<()> {
             pool.lock().unwrap().insert(sid.clone(), (pool_copy, cands.clone()));
             println!("[relay] host 注册 会话={} 候选端点=[{}] (等待 viewer)", sid, cands);
 
-            // 保持原线程不退出，直到连接断开
+            // 监听连接状态：一旦 host 异常断开，立刻从 pool 中清理，避免死连接堆积与线程泄露
             let mut dummy = [0u8; 1];
-            let _ = stream.peek(&mut dummy);
+            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(3)));
             loop {
-                thread::sleep(std::time::Duration::from_secs(60));
+                // 如果会话已经被 viewer 匹配拿走，则该注册监听线程任务完成，正常退出
+                if !pool.lock().unwrap().contains_key(&sid) {
+                    break;
+                }
+                match stream.peek(&mut dummy) {
+                    Ok(0) => {
+                        // EOF：Host 端主动断开连接
+                        println!("[relay] host 主动断开 会话={}", sid);
+                        pool.lock().unwrap().remove(&sid);
+                        break;
+                    }
+                    Ok(_) => {
+                        // 有数据进入（可能是匹配后 host 发送的数据），检查是否仍在 pool 中
+                        if !pool.lock().unwrap().contains_key(&sid) {
+                            break;
+                        }
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+                        continue;
+                    }
+                    Err(e) => {
+                        println!("[relay] host 连接异常断开 会话={}: {}", sid, e);
+                        pool.lock().unwrap().remove(&sid);
+                        break;
+                    }
+                }
             }
+            Ok(())
         }
         // Viewer 请求：发送自身候选端点，换取 Host 候选端点，并触发双向打洞与透明桥接
         b'V' => {
@@ -139,6 +165,10 @@ fn handle_client(mut stream: TcpStream, pool: &HostPool) -> Result<()> {
                     bail!("会话 {} 无等待中的 host", sid);
                 }
             };
+
+            // 确保桥接双向读写前清理读超时设置
+            let _ = host.set_read_timeout(None);
+            let _ = stream.set_read_timeout(None);
 
             // 1. 给 Viewer 推送 Host 的 Candidates (信令格式: b'C' | len(2, be) | str)
             send_string_payload(&mut stream, b'C', &host_cands)?;

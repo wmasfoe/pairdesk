@@ -44,7 +44,11 @@ impl Default for AppState {
 }
 
 fn parse_addr(s: &str) -> Result<SocketAddr, String> {
-    s.parse().map_err(|e| format!("地址无效 {}: {e}", s))
+    use std::net::ToSocketAddrs;
+    s.to_socket_addrs()
+        .map_err(|e| format!("地址解析失败 {}: {e}", s))?
+        .next()
+        .ok_or_else(|| format!("未解析出有效网络地址: {}", s))
 }
 
 /// 设置"允许远程控制"开关。

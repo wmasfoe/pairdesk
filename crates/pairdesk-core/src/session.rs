@@ -306,14 +306,41 @@ pub fn spawn_host_auto(
                         eprintln!("[host-auto] STUN 探测成功，获取公网反射端点: {}", mapped);
                         candidates.push(mapped);
                     }
-                    for local in crate::punch::collect_local_candidates(port) {
+                    for local in crate::punch::collect_local_candidates(port, Some(relay)) {
                         candidates.push(local);
                     }
                     candidates.dedup();
                     let cands_str = crate::punch::serialize_candidates(&candidates);
 
                     eprintln!("[host-auto] 正在向中继注册: relay={}, sid={}, cands=[{}]", relay, sid, cands_str);
-                    let (relay_conn, viewer_cands) = relay::register_host(relay, &sid, &cands_str)?;
+
+                    // 启动后台 STUN 心跳保活，防止在等待 Viewer 期间 NAT 映射表项老化失效（通常 20-30s 超时）
+                    let keepalive_stop = Arc::new(AtomicBool::new(false));
+                    let keepalive_sock = sock.try_clone().ok();
+                    let stop_flag = Arc::clone(&keepalive_stop);
+                    let keepalive_handle = keepalive_sock.map(|ksock| {
+                        thread::Builder::new()
+                            .name("host-stun-keepalive".into())
+                            .spawn(move || {
+                                let mut token = [0u8; 16];
+                                while !stop_flag.load(Ordering::Relaxed) {
+                                    thread::sleep(Duration::from_secs(5));
+                                    if stop_flag.load(Ordering::Relaxed) {
+                                        break;
+                                    }
+                                    rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut token);
+                                    let req = crate::punch::encode_packet(crate::punch::MSG_STUN_REQ, &token, &[]);
+                                    let _ = ksock.send_to(&req, relay);
+                                }
+                            })
+                    });
+
+                    let register_res = relay::register_host(relay, &sid, &cands_str);
+                    keepalive_stop.store(true, Ordering::Relaxed);
+                    if let Some(Ok(h)) = keepalive_handle {
+                        let _ = h.join();
+                    }
+                    let (relay_conn, viewer_cands) = register_res?;
                     eprintln!("[host-auto] 中继匹配成功，收到控制端打洞端点: {:?}", viewer_cands);
 
                     // 3. 执行双向对称打洞 (1.5s)
@@ -386,7 +413,7 @@ pub fn spawn_viewer_auto(
                     eprintln!("[viewer-auto] STUN 探测成功，获取公网反射端点: {}", mapped);
                     candidates.push(mapped);
                 }
-                for local in crate::punch::collect_local_candidates(bound_port) {
+                for local in crate::punch::collect_local_candidates(bound_port, Some(relay)) {
                     candidates.push(local);
                 }
                 candidates.dedup();

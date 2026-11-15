@@ -40,11 +40,15 @@ ss -ltn | grep 8977                          # 端口监听
 
 ## 防火墙
 
+relay 在同一端口同时监听 **TCP（信令牵线 + 透明中继）** 与 **UDP（轻量 STUN 公网端点探测）**，防火墙需同时放行：
+
 ```bash
 # ufw
 sudo ufw allow 8977/tcp
+sudo ufw allow 8977/udp
+
 # firewalld
-sudo firewall-cmd --permanent --add-port=8977/tcp && sudo firewall-cmd --reload
+sudo firewall-cmd --permanent --add-port=8977/tcp --add-port=8977/udp && sudo firewall-cmd --reload
 ```
 
 ## 安全说明
