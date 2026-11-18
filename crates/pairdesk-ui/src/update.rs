@@ -391,6 +391,24 @@ mod tests {
         assert!(sha256_file(std::path::Path::new("/nonexistent/pd-test")).is_err());
     }
 
+    #[test]
+    fn digest_前缀被正确剥离() {
+        // GitHub 给的是 "sha256:abcd..."，校验时要剥掉前缀再小写比较
+        let raw = "sha256:BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD";
+        let normalized = raw.strip_prefix("sha256:").unwrap().to_ascii_lowercase();
+        assert_eq!(
+            normalized,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+
+        // 没有前缀也能用
+        let no_prefix = "abc123";
+        assert_eq!(
+            no_prefix.strip_prefix("sha256:").unwrap_or(no_prefix),
+            "abc123"
+        );
+    }
+
     #[tokio::test]
     async fn 空地址拒绝下载() {
         // 不应发起网络请求就报错
