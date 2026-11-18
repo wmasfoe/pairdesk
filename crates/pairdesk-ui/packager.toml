@@ -23,7 +23,7 @@ product_name = "PairDesk"
 # 版本号：cargo-packager 不会自动读 Cargo.toml，必须显式给。
 # CI 里由 `Sync version` 步骤用 awk 同步本文件与所有 Cargo.toml（见 .github/workflows/release.yml），
 # 因此这里的值与 crate 版本始终一致。
-version = "0.1.21"
+version = "0.2.0"
 description = "两人 P2P 远程协助"
 authors = ["PairDesk"]
 copyright = "Copyright © 2026 PairDesk"

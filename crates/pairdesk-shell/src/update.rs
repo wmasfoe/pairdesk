@@ -14,6 +14,9 @@ pub struct UpdateInfo {
     pub has_update: bool,
     pub release_notes: String,
     pub download_url: String,
+    /// 安装包的 sha256（GitHub Release 的 `asset.digest`，形如 `sha256:abcd...`）。
+    /// 下载后用于完整性校验；缺失时跳过校验（旧 release 可能没有该字段）。
+    pub digest: Option<String>,
 }
 
 /// 目标平台三元组，用于决定匹配哪种安装包。
@@ -113,6 +116,20 @@ where
         .and_then(|(_, url)| url.map(str::to_string))
 }
 
+/// 在资产列表里找出与 `url` 对应的 digest（sha256）。
+///
+/// 单独一个函数是因为 `build_update_info` 的资产类型保持 `(name, url)` 不变，
+/// 避免改动已有调用点与单测；digest 由适配器层在拿到 JSON 后补进来。
+pub fn digest_for<'a, I>(assets: I, url: &str) -> Option<String>
+where
+    I: IntoIterator<Item = (&'a str, Option<&'a str>, Option<&'a str>)>,
+{
+    assets
+        .into_iter()
+        .find(|(_, u, _)| u.map(|x| x == url).unwrap_or(false))
+        .and_then(|(_, _, d)| d.map(str::to_string))
+}
+
 /// 组装最终的更新信息。
 ///
 /// 参数是已经从 GitHub JSON 里取出的字段；网络与解析由适配器负责。
@@ -122,6 +139,7 @@ pub fn build_update_info(
     release_notes: &str,
     assets: Vec<(String, Option<String>)>,
     fallback_url: &str,
+    digest: Option<String>,
 ) -> UpdateInfo {
     let latest = normalize_version(tag_name);
     let pattern = platform_asset_pattern(Platform::current());
@@ -139,6 +157,7 @@ pub fn build_update_info(
         has_update: !latest.is_empty() && latest != current_version,
         release_notes: release_notes.to_string(),
         download_url,
+        digest,
     }
 }
 
@@ -297,6 +316,7 @@ mod tests {
             "修复若干问题",
             vec![(asset_name, Some("https://example.com/pkg".into()))],
             "https://github.com/wmasfoe/pairdesk/releases",
+            None,
         );
 
         assert_eq!(info.current_version, "0.1.21");
@@ -315,6 +335,7 @@ mod tests {
             "",
             vec![("不相关的文件.zip".into(), Some("https://example.com/x".into()))],
             "https://github.com/wmasfoe/pairdesk/releases/tag/v0.1.22",
+            None,
         );
         assert_eq!(
             info.download_url,
@@ -324,7 +345,7 @@ mod tests {
 
     #[test]
     fn 组装更新信息_已是最新() {
-        let info = build_update_info("0.1.21", "v0.1.21", "", vec![], "https://example.com");
+        let info = build_update_info("0.1.21", "v0.1.21", "", vec![], "https://example.com", None);
         assert!(!info.has_update);
         assert_eq!(info.latest_version, "0.1.21");
     }

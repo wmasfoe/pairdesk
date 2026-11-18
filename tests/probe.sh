@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# 前置：需要先构建测试辅助二进制（含 Linux 专有的 examples/paint）：
+#   ./scripts/build-test-bins.sh
+
 # 手动诊断：paint 窗口是否真的能通过 GetImage 读到
 cd "$(dirname "$0")/.." || exit 1
 pkill -x Xvfb 2>/dev/null; rm -f /tmp/.X99-lock; sleep 1

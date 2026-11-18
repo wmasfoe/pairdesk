@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# 前置：需要先构建测试辅助二进制（含 Linux 专有的 examples/paint）：
+#   ./scripts/build-test-bins.sh
+
 # 自动择一 e2e：验证"无感择优 + 自动降级"
 #  场景A: host 走 auto(QUIC+中继) → viewer auto 应自动选 QUIC 打洞直连
 #  场景B: host 仅中继(无 QUIC server) → viewer auto 自动降级到中继兜底
