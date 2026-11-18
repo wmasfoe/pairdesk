@@ -1,8 +1,0 @@
-# pnpm workspace：管理前端两个包（app 业务层 + ui-kit 基础组件库）
-packages:
-  - "app"
-  - "packages/*"
-
-# pnpm v11+：显式允许 esbuild 执行 postinstall（下载其平台二进制；vite 依赖它）
-allowBuilds:
-  esbuild: true
