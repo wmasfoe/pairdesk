@@ -1,0 +1,67 @@
+# cargo-packager 配置 —— GPUI 壳的三平台安装包。
+#
+# 用法（在仓库根目录）：
+#   cargo install cargo-packager --locked
+#   cargo packager -p pairdesk-ui
+#
+# 产物：
+#   macOS   → .dmg / .app
+#   Windows → .msi / .exe
+#   Linux   → .deb / .AppImage
+#
+# 注意：本配置只负责打包 pairdesk-ui（GPUI 壳）。
+# 迁移完成前，Tauri 版仍由 .github/workflows/release.yml 的 `tauri build` 产出。
+
+name = "PairDesk"
+out_dir = "../../dist"
+identifier = "com.pairdesk.app"
+product_name = "PairDesk"
+
+# 版本号：cargo-packager 不会自动读 Cargo.toml，必须显式给。
+# CI 里由 `Sync version` 步骤用 awk 同步本文件与所有 Cargo.toml（见 .github/workflows/release.yml），
+# 因此这里的值与 crate 版本始终一致。
+version = "0.1.21"
+description = "两人 P2P 远程协助"
+authors = ["PairDesk"]
+copyright = "Copyright © 2026 PairDesk"
+homepage = "https://github.com/wmasfoe/pairdesk"
+
+# 二进制名与 Cargo.toml 的 [[bin]] name 一致。
+# cargo-packager 默认从 out_dir 找二进制，这里显式指向 cargo 的产物目录。
+binaries = [
+  { path = "pairdesk-ui", main = true },
+]
+binaries_dir = "../../target/release"
+
+icons = [
+  "icons/32x32.png",
+  "icons/128x128.png",
+  "icons/icon.icns",
+  "icons/icon.ico",
+]
+
+[macos]
+# 未签名分发：安装脚本会解除 quarantine
+signing_identity = "-"
+frameworks = []
+minimum_system_version = "11.0"
+
+# macOS 需要屏幕录制与辅助功能权限。
+# cargo-packager 0.11 不支持内联 info_plist，需要用文件方式（见下）。
+info_plist_path = "Info.plist"
+
+[wix]
+# 不签名（与现有发布流程一致）
+
+[deb]
+# Debian/Ubuntu 运行时依赖：Wayland/X11 + Vulkan + 字体
+depends = [
+  "libwayland-client0",
+  "libxkbcommon0",
+  "libxkbcommon-x11-0",
+  "libfontconfig1",
+  "libvulkan1",
+]
+
+[appimage]
+# AppImage 默认行为即可

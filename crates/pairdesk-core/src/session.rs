@@ -610,8 +610,14 @@ fn host_session_once<C: FrameStream + Send + 'static>(
                                     }
                                 };
                                 // 单个输入失败不致命：记录后继续，避免整个接收线程退出导致失控
-                                if let Err(e) = apply_input(&mut injector, msg) {
-                                    eprintln!("[host-recv] 输入注入失败(跳过): {}", e);
+                                match apply_input(&mut injector, msg) {
+                                    Ok(()) => {
+                                        // 诊断日志：确认输入链路打通（PD_LOG_INPUT=1 才输出，避免刷屏）
+                                        if std::env::var("PD_LOG_INPUT").is_ok() {
+                                            eprintln!("[host-recv] 输入已注入");
+                                        }
+                                    }
+                                    Err(e) => eprintln!("[host-recv] 输入注入失败(跳过): {}", e),
                                 }
                             }
                             FrameType::Heartbeat => {}

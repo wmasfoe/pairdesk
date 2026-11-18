@@ -1,17 +1,24 @@
-# PairDesk 三平台构建 + Release 发布
+# PairDesk 三平台构建 + Release 发布（GPUI 版）
 #
-# 在真实的 Linux / macOS / Windows runner 上各自编译内核 + Tauri App + CLI
-# （macOS/Windows 的"编译验证"由 CI 承担——本开发机是 Linux，无法本地编 mac/win）。
+# 在真实的 Linux / macOS / Windows runner 上各自编译 GPUI App + CLI，跑单测，产出安装包。
 # 打 tag v* 时把产物发布到 GitHub Release。
 #
-# 注意边界：CI 是无头环境，能验证"编译 + 单元测试 + 打包"，
-# 但真实"屏幕采集/输入注入"需要真实显示会话与系统权限，仍在真机手测。
+# 为什么必须用真 runner 而不能本地交叉编译（实测结论，见 docs/architecture/gpui-constraints.md）：
+#   - Linux：链接需要 xcb / xkbcommon / xkbcommon-x11 系统库，macOS 上没有
+#   - Windows：gpui 的 build.rs 在 release 下硬依赖 fxc.exe（Windows SDK 提供）
+#
+# 边界：CI 能验证「编译 + 单测 + 打包」，但真实的屏幕采集/输入注入需要真实显示会话
+# 与系统权限，仍在真机手测。
 name: release
 
 on:
   push:
     branches: [main]
     tags: ['v*']
+  # PR 也要跑：这是三平台 GPUI 编译验证的唯一途径
+  # （本机 macOS 无法交叉验证 Linux 的系统库与 Windows 的 fxc.exe）
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       release_tag:
@@ -35,95 +42,98 @@ jobs:
         with:
           ref: ${{ inputs.release_tag || github.ref }}
 
-      # ---- Linux 系统依赖（Tauri webkit）----
+      # ---- Linux 系统依赖（GPUI：Wayland/X11 + 字体 + Vulkan）----
       - name: Install Linux deps
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
-            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          sudo apt-get install -y \
+            build-essential curl wget file pkg-config \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libfontconfig1-dev libfreetype-dev \
+            libx11-dev libxcb1-dev \
+            libvulkan-dev libssl-dev
 
       # ---- Rust ----
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # ---- Node + pnpm（前端）----
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      # ---- 依赖缓存 ----
+      # 只缓存 cargo registry 与 target，不缓存任何 node_modules（已无前端）。
+      - name: Cache cargo
+        uses: actions/cache@v4
         with:
-          node-version: 22
-      - name: Enable pnpm
-        run: corepack enable
-      # 不缓存 app/node_modules：actions/cache@v4 在 Windows restore 缓存时会
-      # 产出 realpath/EPERM 不可读的 node_modules（pnpm rebuild esbuild 与
-      # vite build 均因 stat node_modules 失败），且是稳定复现、重跑无效。
-      # 同一 HEAD 首个 push run 就是"全新 pnpm install(无缓存)"在三平台全绿，
-      # 故去掉缓存、每次全新装依赖最可靠（多花几十秒，可接受）。
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
 
-      # ---- 同步版本号（从 tag 或 commit 提取版本更新到 tauri.conf.json / package.json / Cargo.toml）----
+      # ---- macOS: Metal 工具链 ----
+      # Cargo.toml 已启用 gpui 的 runtime_shaders feature，shader 运行时编译，
+      # 因此不强制需要 Metal Toolchain。此步仅作保险（失败不阻塞）。
+      - name: Ensure Metal toolchain (macOS)
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        run: xcodebuild -downloadComponent MetalToolchain
+
+      # ---- 同步版本号（从 tag 提取，写入所有 crate 的 Cargo.toml）----
       - name: Sync version
         env:
           RELEASE_TAG: ${{ inputs.release_tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || '' }}
         run: |
           if [[ "$RELEASE_TAG" == v* ]]; then
             VER="${RELEASE_TAG#v}"
+            echo "Syncing version to $VER"
+            # 所有 crate 共用同一版本号（见 docs/architecture/crate-map.md）
+            # 用 awk 只改第一处 version（跨 GNU/BSD sed 写法差异大，awk 最稳）
+            # 范围：所有 crate 的 Cargo.toml + cargo-packager 配置（否则安装包名里的版本号对不上 tag）
+            for f in crates/*/Cargo.toml crates/pairdesk-ui/packager.toml; do
+              awk -v v="$VER" 'BEGIN{done=0} /^version = "/ && !done { sub(/"[^"]*"/, "\"" v "\""); done=1 } {print}' "$f" > "$f.tmp"
+              mv "$f.tmp" "$f"
+              echo "  $f -> $(grep -m1 '^version' "$f")"
+            done
           else
-            VER="$(node -p "require('./crates/pairdesk-app/tauri.conf.json').version")"
+            echo "Not a tag build, keeping Cargo.toml versions as-is"
           fi
-          echo "Syncing version to $VER"
-          # 替换 tauri.conf.json 中的 version
-          node -e "
-            const fs = require('fs');
-            const p = 'crates/pairdesk-app/tauri.conf.json';
-            const j = JSON.parse(fs.readFileSync(p, 'utf8'));
-            j.version = '$VER';
-            fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
-          "
-          # 同步更新 crates/pairdesk-app/Cargo.toml 中的 version (供 env!("CARGO_PKG_VERSION") 使用)
-          node -e "
-            const fs = require('fs');
-            const p = 'crates/pairdesk-app/Cargo.toml';
-            let c = fs.readFileSync(p, 'utf8');
-            c = c.replace(/^version = \"[^\"]+\"/m, 'version = \"$VER\"');
-            fs.writeFileSync(p, c);
-          "
         shell: bash
 
-      # ---- 构建前端（产 app/dist）----
-      - name: Install & build frontend
-        run: |
-          # pnpm 新版把"忽略依赖 build 脚本(esbuild)"当硬错误; || true 让 install 继续,
-          # 随后 pnpm rebuild esbuild 强制装好二进制(跨 pnpm 版本最稳)
-          pnpm install --frozen-lockfile || true
-          pnpm rebuild esbuild
-          cd app && pnpm build
-        shell: bash
-
-      # ---- 编译内核 + App + CLI（release）----
-      - name: Compile (cargo release)
+      # ---- 编译（release）----
+      - name: Build
         run: cargo build --release --workspace
         shell: bash
 
-      # ---- 单元测试（只测 lib，绕开 examples：它们在 mac/win 会用 Linux 专有的 x11rb）----
+      # ---- 单测（行为等价护栏，122 个）----
       - name: Unit tests
         run: cargo test --release --lib --workspace
         shell: bash
 
-      # ---- Tauri bundle（打包成各平台安装包）----
-      # 必须在 tauri 项目目录(crates/pairdesk-app,含 tauri.conf.json+Cargo.toml)跑;
-      # tauri-cli 从 CWD 识别项目(在 app/ 会 panic "Couldn't recognize current folder")。
-      - name: Tauri bundle
+      # ---- 领域层与 UI 层单测（显式点名，确保不会被 --lib 过滤规则漏掉）----
+      - name: Domain & UI tests
         run: |
-          cd crates/pairdesk-app
-          pnpm exec tauri build
+          cargo test --release -p pairdesk-shell
+          cargo test --release -p pairdesk-ui
         shell: bash
 
-      # ---- 收集产物 ----
+      # ---- 打包安装包（.dmg / .msi / .deb + .AppImage）----
+      # PR 上跳过：打包耗时长且易受环境影响（如 macOS 的 Finder AppleScript），
+      # PR 阶段的核心目的是验证「能编译 + 单测绿」。
+      - name: Package
+        if: github.event_name != 'pull_request'
+        run: |
+          cargo install cargo-packager --locked
+          cargo packager -p pairdesk-ui --config crates/pairdesk-ui/packager.toml
+        shell: bash
+
+      # ---- 收集 CLI 二进制 ----
       - name: Collect CLI binaries
         run: |
           mkdir -p dist-cli
-          cp target/release/pairdesk dist-cli/pairdesk-${{ runner.os }}-$(uname -m)${{ runner.os == 'Windows' && '.exe' || '' }}
-          cp target/release/pairdesk-relay dist-cli/pairdesk-relay-${{ runner.os }}-$(uname -m)${{ runner.os == 'Windows' && '.exe' || '' }}
+          EXT="${{ runner.os == 'Windows' && '.exe' || '' }}"
+          ARCH="$(uname -m)"
+          cp "target/release/pairdesk$EXT" "dist-cli/pairdesk-${{ runner.os }}-$ARCH$EXT"
+          cp "target/release/pairdesk-relay$EXT" "dist-cli/pairdesk-relay-${{ runner.os }}-$ARCH$EXT"
         shell: bash
 
       # ---- MUSL 全静态编译（仅 Linux）----
@@ -135,13 +145,12 @@ jobs:
         run: |
           rustup target add x86_64-unknown-linux-musl
           # cargo-zigbuild 交叉编译需要本机 zig 二进制作为 C 编译器/linker。
-          # 不用 ziglang install.sh(路径不定), 直接下载确定版本到固定目录并导出 ZIG_TARGET。
+          # 不用 ziglang install.sh(路径不定), 直接下载确定版本到固定目录并导出 PATH。
           mkdir -p /tmp/zigset && cd /tmp/zigset
           curl -fsSL -o zig.tar.xz https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz
           tar xf zig.tar.xz
           export PATH="/tmp/zigset/zig-linux-x86_64-0.13.0:$PATH"
           zig version
-          # 回到仓库跟目录
           cd "$GITHUB_WORKSPACE"
           pipx install cargo-zigbuild
           export PATH="$HOME/.local/bin:$PATH"
@@ -152,16 +161,15 @@ jobs:
           cp target/x86_64-unknown-linux-musl/release/pairdesk-relay dist-cli-musl/pairdesk-relay-linux-x86_64-musl
         shell: bash
 
-      - name: Upload bundle & CLI
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: pairdesk-${{ matrix.os }}
           path: |
             dist-cli/*
             dist-cli-musl/*
-            target/release/bundle/**
+            dist/*
           if-no-files-found: warn
-
 
   release:
     name: publish
@@ -172,18 +180,26 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+
       - name: Publish GitHub Release
         run: |
           set -e
-          # 只收集真正的安装包(.deb/.AppImage/.dmg/.msi)与 CLI(dist-cli/pairdesk*、dist-cli-musl/*)；
-          # 若用 pairdesk-* 全匹配会误收 bundle 里 deb/AppImage 解压的中间文件(pairdesk-app.png、usr/bin/pairdesk-app)
+          # CLI：dist-cli / dist-cli-musl 下的二进制
           CLI=$(find artifacts -type f \( -path '*/dist-cli/pairdesk*' -o -path '*/dist-cli-musl/pairdesk*' \))
-          PKG=$(find artifacts -type f \( -name '*.deb' -o -name '*.AppImage' -o -name '*.appimage' -o -name '*.dmg' -o -name '*.pkg' -o -name '*.msi' -o -name '*.rpm' \))
+          # 安装包：cargo-packager 产出的 .dmg / .msi / .exe / .deb / .AppImage / .rpm
+          PKG=$(find artifacts -type f \( \
+            -name '*.dmg' -o -name '*.pkg' -o \
+            -name '*.msi' -o -name '*.exe' -o \
+            -name '*.deb' -o -name '*.rpm' -o \
+            -name '*.AppImage' -o -name '*.appimage' \))
           FILES=$(printf '%s\n%s\n' "$CLI" "$PKG" | sort -u)
+          if [ -z "$FILES" ]; then
+            echo "❌ 没有可发布的产物"
+            exit 1
+          fi
           echo "发布文件:"; echo "$FILES"
           # publish job 未 checkout(无 .git)，必须显式 --repo，否则 gh 报 "not a git repository"
           if gh release view "$RELEASE_TAG" --repo wmasfoe/pairdesk >/dev/null 2>&1; then
-            # release 已存在：直接上传/覆盖资产（gh release edit 不接受文件参数）
             gh release upload "$RELEASE_TAG" --repo wmasfoe/pairdesk --clobber $FILES
           else
             gh release create "$RELEASE_TAG" --repo wmasfoe/pairdesk \

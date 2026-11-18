@@ -1,0 +1,34 @@
+[package]
+name = "pairdesk-ui"
+version = "0.1.21"
+edition = "2021"
+description = "PairDesk 桌面 App（GPUI 壳：渲染 + 事件转发，业务逻辑在 pairdesk-shell）"
+
+[[bin]]
+name = "pairdesk-ui"
+path = "src/main.rs"
+
+[dependencies]
+# 领域层：业务规则与状态机（可单测，零 UI 依赖）
+pairdesk-shell = { path = "../pairdesk-shell" }
+# 引擎层：协议/采集/编码/传输
+pairdesk-core = { path = "../pairdesk-core" }
+
+# GPUI：锁 0.2.2（见 docs/architecture/gpui-constraints.md）
+# runtime_shaders 规避 macOS 缺 Metal Toolchain 的构建失败
+gpui = { version = "0.2.2", features = ["runtime_shaders"] }
+gpui-component = "0.5.0"
+
+# 画面帧解码：zune-jpeg 比 image crate 快一倍（实测 3.4ms vs 6.4ms @1080p）
+zune-jpeg = "0.4"
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+
+# 更新检查的网络请求
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+futures-util = "0.3"
+
+[dev-dependencies]
+# 仅用于 update::download_installer 的异步单测
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

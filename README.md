@@ -24,7 +24,7 @@
     <img src="https://img.shields.io/badge/platform-macOS_%7C_Windows_%7C_Linux-blue?style=flat-square" alt="Platforms">
   </a>
   <a href="https://github.com/wmasfoe/pairdesk/releases">
-    <img src="https://img.shields.io/badge/built_with-Rust_%2B_Tauri-orange?style=flat-square&logo=rust&logoColor=white" alt="Built with Rust + Tauri">
+    <img src="https://img.shields.io/badge/built_with-Rust_%2B_GPUI-orange?style=flat-square&logo=rust&logoColor=white" alt="Built with Rust + GPUI">
   </a>
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
 </p>
@@ -57,10 +57,16 @@
 
 ### 形态
 
-- `pairdesk-core`：核心引擎（纯 Rust：采集 / 编码 / 加密 / 传输 / 注入）
-- `pairdesk-relay`：中继服务器（独立部署 VPS，**不打包进客户端**）
-- `ui-kit` / `app`：前端界面（React + Tauri）
-- CLI：`pairdesk` / `pairdesk-relay` 三平台可用，另附 **MUSL 全静态版**（任何 Linux 免 glibc 直接跑）
+四层架构，依赖只能向内（详见 [`docs/architecture/`](docs/architecture/)）：
+
+| Crate | 层 | 职责 |
+|---|---|---|
+| `pairdesk-ui` | 适配器 | GPUI 壳：只渲染 + 转发事件 |
+| `pairdesk-shell` | 领域 | 会话状态机 / 输入映射 / 权限判定（零 UI 依赖，全可单测） |
+| `pairdesk-core` | 引擎 | 采集 / 编码 / 加密 / 传输 / 注入 |
+| `pairdesk-relay` | 独立服务 | 中继服务器（部署 VPS，**不打包进客户端**） |
+
+CLI：`pairdesk` / `pairdesk-relay` 三平台可用，另附 **MUSL 全静态版**（任何 Linux 免 glibc 直接跑）
 
 ## 网络架构
 
@@ -129,7 +135,8 @@ pairdesk connect 127.0.0.1:8888 --relay 1.2.3.4:8989 --sid myroom --password 123
 - [x] **QUIC 传输基座**：tokio + quinn，跨进程可靠传输验证
 - [x] **打洞落地**：relay 信令交换 + QUIC 承载完整会话，四链路全绿
 - [x] **自动择一**：QUIC 打洞优先、失败降级中继（auto-e2e 8/8）
-- [x] **M1 App 骨架**：Tauri 壳 + 前端（会话码 / 密码 / 允许开关 / 自动路径）
+- [x] **M1 App 骨架**：桌面壳 + 界面（会话码 / 密码 / 允许开关 / 自动路径）
+- [x] **UI 迁移到 GPUI**：Tauri/React → GPUI 原生 GPU 渲染，领域层抽出 88 个单测
 - [ ] 三路全自动（同网 TCP 直连并入自动择一，含竞速优先）
 - [ ] **M2 macOS 真机**：core-graphics 采集 + CGEvent 注入已实现、CI 编译绿，待实机权限验证
 - [ ] M3 体验打磨（权限引导、二维码）
