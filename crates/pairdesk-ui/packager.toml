@@ -29,16 +29,21 @@ authors = ["PairDesk"]
 copyright = "Copyright © 2026 PairDesk"
 homepage = "https://github.com/wmasfoe/pairdesk"
 
-# 产物格式：必须显式声明，不能用 default。
+# 产物格式：不在配置文件里写，由 CI 按平台用 `--formats` 传入。
 #
-# 原因：cargo-packager 的 default 在各平台包含多余格式——
+# 为什么不能在这里写死：
+#   formats 是全局列表，cargo-packager **不会**忽略不适用当前平台的格式。
+#   实测在 Windows 上写 ["app", "dmg", ...] 会让它真的去创建
+#   `dist/PairDesk.app/Contents/MacOS/` 目录，然后因找不到文件而失败。
+#
+# 而也不能用 default：
 #   - Linux 的 default 含 pacman（产出 tar.gz + PKGBUILD，不是安装包）
-#   - Windows 的 default 含 nsis（产出 setup.exe）
-# 而 pairdesk-shell::update::platform_asset_pattern 只认 .dmg / .msi / .AppImage，
-# 多出来的格式会让「检查更新」匹配不到资产，且 release 里混入非安装包文件。
+#   - Windows 的 default 含 nsis（产出 setup.exe，而 update 逻辑只认 .msi）
 #
-# 不适用当前平台的格式会被 cargo-packager 自动忽略，因此三平台可共用一份列表。
-formats = ["app", "dmg", "wix", "deb", "appimage"]
+# 各平台应有的格式（与 pairdesk-shell::update::platform_asset_pattern 对齐）：
+#   macOS   → app,dmg          （匹配 aarch64.dmg / x86_64.dmg）
+#   Windows → wix              （匹配 .msi）
+#   Linux   → deb,appimage     （匹配 .AppImage）
 
 # 二进制名与 Cargo.toml 的 [[bin]] name 一致。
 # cargo-packager 默认从 out_dir 找二进制，这里显式指向 cargo 的产物目录。

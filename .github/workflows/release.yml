@@ -123,7 +123,17 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           cargo install cargo-packager --locked
-          cargo packager -p pairdesk-ui --config crates/pairdesk-ui/packager.toml
+          # 按平台指定格式：cargo-packager 不会忽略不适用当前平台的格式
+          # （在 Windows 上传 app/dmg 会尝试创建 .app 目录并失败）。
+          # 各平台格式必须与 pairdesk-shell::update::platform_asset_pattern 对齐。
+          case "${{ runner.os }}" in
+            macOS)   FORMATS="app,dmg" ;;
+            Windows) FORMATS="wix" ;;
+            Linux)   FORMATS="deb,appimage" ;;
+            *)       echo "未知平台"; exit 1 ;;
+          esac
+          echo "打包格式: $FORMATS"
+          cargo packager -p pairdesk-ui --config crates/pairdesk-ui/packager.toml --formats "$FORMATS"
         shell: bash
 
       # ---- 收集 CLI 二进制 ----
