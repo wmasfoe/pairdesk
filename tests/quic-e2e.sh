@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# 前置：需要先构建测试辅助二进制（含 Linux 专有的 examples/paint）：
+#   ./scripts/build-test-bins.sh
+
 # QUIC 打洞直连 e2e：被控端起 QUIC server、控制端经 QUIC 连上，跑完整会话(认证+画面+输入)。
 # 模拟"异网打洞成功后的 P2P 直连"(本机双进程)。帧协议与 TCP/中继完全互通。
 set -uo pipefail

@@ -65,6 +65,10 @@ jobs:
         continue-on-error: true
         run: xcodebuild -downloadComponent MetalToolchain
 
+      # --all-targets 会连 examples/tests/benches 一起检查。
+      # 其中 examples/paint 与 capture_probe 是纯 X11 工具（x11rb），
+      # 已在 pairdesk-core/Cargo.toml 里用 required-features 门控，
+      # 因此 macOS/Windows 上会自动跳过，不会编译失败。
       - name: Check (workspace)
         run: cargo check --workspace --all-targets
         shell: bash

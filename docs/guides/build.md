@@ -15,7 +15,22 @@ cargo test -p pairdesk-ui
 cargo test --lib --workspace
 ```
 
-> 为什么用 `--lib`：`examples/` 里有 Linux 专有的 `x11rb` 用法，在 macOS/Windows 上编译会失败。
+> 为什么用 `--lib`：`examples/paint` 与 `capture_probe` 是纯 X11 工具（用 `x11rb`
+> 直接操作 X server），只在 Linux 上有意义。它们已在 `pairdesk-core/Cargo.toml`
+> 里用 `required-features = ["x11-examples"]` 门控，因此 `--all-targets` 在
+> macOS/Windows 上会自动跳过它们。
+
+## 构建测试辅助二进制
+
+`tests/` 里的 e2e 脚本需要一个纯色窗口当"被采集的屏幕"（`examples/paint`）。
+统一用这个脚本预构建：
+
+```bash
+./scripts/build-test-bins.sh          # debug
+./scripts/build-test-bins.sh --release
+```
+
+在 Linux 上它会额外构建 X11 examples；其他平台自动跳过。
 
 ## 2. 构建
 

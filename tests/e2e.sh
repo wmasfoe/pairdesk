@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# 前置：需要先构建测试辅助二进制（含 Linux 专有的 examples/paint）：
+#   ./scripts/build-test-bins.sh
+
 # M0 端到端验收：虚拟屏幕上的双实例互连测试
 # 验证三条链路：画面(采集→编码→加密→传输→解密) / 输入(控制端→被控端→注入) / 认证
 set -uo pipefail

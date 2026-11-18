@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# 前置：需要先构建测试辅助二进制（含 Linux 专有的 examples/paint）：
+#   ./scripts/build-test-bins.sh
+
 # 中继链路 e2e 验收：验证"异地跨网"场景（两台在不同 WiFi，经 VPS 中继互连）。
 #
 # 流程：起 relay(本机模拟 VPS) + 虚拟屏幕 + 画色块窗口

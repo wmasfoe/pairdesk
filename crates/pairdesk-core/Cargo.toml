@@ -37,3 +37,21 @@ windows = { version = "0.58", features = [
 
 [dev-dependencies]
 zune-jpeg = "0.4"
+
+# ---- Examples ----
+# paint 与 capture_probe 是纯 X11 工具（用 x11rb 直接操作 X server），
+# 只在 Linux 上有意义。用 required-features 门控，这样 macOS/Windows 上
+# `cargo check --all-targets` / `cargo test --all-targets` 不会尝试编译它们。
+#
+# 声明一个永不启用的 feature 作为门控开关：好处是不需要用户理解
+# 「为什么这两个 example 没被编译」，也不会误把 x11rb 拉进非 Linux 构建。
+[features]
+x11-examples = []
+
+[[example]]
+name = "paint"
+required-features = ["x11-examples"]
+
+[[example]]
+name = "capture_probe"
+required-features = ["x11-examples"]
