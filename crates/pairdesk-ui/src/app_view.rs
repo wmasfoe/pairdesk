@@ -357,27 +357,66 @@ impl PairDeskApp {
     /// 应用内下载并安装更新（对应旧 `pd_install_update`）。
     ///
     /// 下载完成后调平台安装脚本并退出当前进程——安装脚本会重启新版。
-    fn start_install(&mut self, url: String, cx: &mut Context<Self>) {
+    fn start_install(&mut self, url: String, digest: Option<String>, cx: &mut Context<Self>) {
         if self.update_progress.is_some() {
             return; // 已在下载中
         }
         self.update_progress = Some(SharedString::from("准备下载…"));
         cx.notify();
 
-        let progress_slot = std::rc::Rc::new(std::cell::RefCell::new(0u32));
+        // 进度节流：每 5% 才推一次 UI，避免每个 chunk 都 notify 造成重绘风暴
+        let last_percent = std::rc::Rc::new(std::cell::RefCell::new(0u32));
+        // 跨线程安全的进度中转：下载在 background executor 上跑，
+        // 回调里不能直接碰 Context，所以写入共享槽，再由轮询任务读出来更新 UI。
+        let progress_slot = std::sync::Arc::new(std::sync::Mutex::new(None::<u32>));
+
+        // 轮询任务：把下载进度反映到界面上
+        let poll_slot = progress_slot.clone();
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(120))
+                    .await;
+                let latest = *poll_slot.lock().unwrap();
+                let Ok(keep_going) = this.update(cx, |app, cx| {
+                    match latest {
+                        Some(pct) => {
+                            app.update_progress =
+                                Some(SharedString::from(format!("正在下载… {pct}%")));
+                            cx.notify();
+                        }
+                        None => {
+                            // None 表示下载已结束（成功或失败），由主流程接管后续文案
+                            return false;
+                        }
+                    }
+                    true
+                }) else {
+                    return;
+                };
+                if !keep_going {
+                    return;
+                }
+            }
+        })
+        .detach();
 
         cx.spawn(async move |this, cx| {
-            let result = crate::update::download_installer(&url, {
+            let result = crate::update::download_installer(&url, digest.as_deref(), {
                 let slot = progress_slot.clone();
+                let last = last_percent.clone();
                 move |p| {
-                    // 限制通知频率：每 5% 更新一次，避免刷屏
-                    let mut last = slot.borrow_mut();
+                    let mut last = last.borrow_mut();
                     if p.percent >= *last + 5 || p.percent == 100 {
                         *last = p.percent;
+                        *slot.lock().unwrap() = Some(p.percent);
                     }
                 }
             })
             .await;
+
+            // 标记下载结束，让轮询任务退出
+            *progress_slot.lock().unwrap() = None;
 
             match result {
                 Ok(path) => {
@@ -591,6 +630,7 @@ impl PairDeskApp {
         };
         let url = info.download_url.clone();
         let url_browser = url.clone();
+        let digest = info.digest.clone();
 
         div()
             .absolute()
@@ -671,7 +711,7 @@ impl PairDeskApp {
                                     .small()
                                     .label("立即安装")
                                     .on_click(cx.listener(move |app, _, _, cx| {
-                                        app.start_install(url.clone(), cx);
+                                        app.start_install(url.clone(), digest.clone(), cx);
                                     })),
                             ),
                     ),
@@ -805,8 +845,9 @@ impl PairDeskApp {
                         Button::new("perm-restart")
                             .small()
                             .label("重启应用")
-                            .on_click(cx.listener(|_app, _, _, cx| {
-                                // macOS 的 TCC 权限按进程缓存，授权后必须重启才能读到新状态
+                            .on_click(cx.listener(|_app, _, _, _cx| {
+                                // macOS 的 TCC 权限按进程缓存，授权后必须重启才能读到新状态。
+                                // restart_app 会 spawn 新进程后 exit，不再返回。
                                 permissions::restart_app();
                             })),
                     ),
