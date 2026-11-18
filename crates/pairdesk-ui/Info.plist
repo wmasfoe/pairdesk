@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>PairDesk</string>
+	<key>CFBundleDisplayName</key>
+	<string>PairDesk</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.pairdesk.app</string>
+	<key>CFBundleVersion</key>
+	<string>0.1.21</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.21</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>11.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>PairDesk 需要屏幕录制权限来共享你的屏幕给协助方。</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>PairDesk 需要控制其他应用以完成远程协助。</string>
+</dict>
+</plist>
