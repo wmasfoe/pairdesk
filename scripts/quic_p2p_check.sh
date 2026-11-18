@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 双进程 QUIC 点对点验证驱动：起 host 后台 + viewer 前台，收集两端输出。
-cd /home/debian/code/pairdesk
+cd "$(dirname "$0")/.." || exit 1
 BIN=./target/debug/examples/quic_p2p
 PORT=29501
 "$BIN" host 127.0.0.1:$PORT >/tmp/q2p-host.log 2>&1 &

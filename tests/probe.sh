@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 手动诊断：paint 窗口是否真的能通过 GetImage 读到
-cd /home/debian/code/pairdesk
+cd "$(dirname "$0")/.." || exit 1
 pkill -x Xvfb 2>/dev/null; rm -f /tmp/.X99-lock; sleep 1
 Xvfb :99 -screen 0 640x480x24 >/tmp/xvfb.log 2>&1 &
 XPID=$!

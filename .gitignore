@@ -1,6 +1,14 @@
+# ---- Rust 构建产物 ----
 /target
 **/target
-node_modules
-dist
+
+# ---- 打包产物 ----
+dist/
+
+# ---- Agent 工作目录（pi 的运行时数据与内置技能，与项目无关）----
+.pi/
+skills/
+
+# ---- 日志与系统文件 ----
 *.log
 .DS_Store

@@ -1,3 +1,14 @@
 [workspace]
 resolver = "2"
-members = ["crates/pairdesk-core", "crates/pairdesk-relay", "crates/pairdesk-app"]
+
+# 分层（依赖只能向内，详见 docs/architecture/clean-architecture.md）：
+#   pairdesk-ui    GPUI 壳（适配器：只渲染 + 转发）
+#   pairdesk-shell 领域层（业务规则，零 UI 依赖，全部可单测）
+#   pairdesk-core  引擎层（协议/采集/编码/传输/注入）
+#   pairdesk-relay 中继服务器（独立部署，不打包进客户端）
+members = [
+    "crates/pairdesk-core",
+    "crates/pairdesk-relay",
+    "crates/pairdesk-shell",
+    "crates/pairdesk-ui",
+]

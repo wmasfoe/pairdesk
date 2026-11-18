@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # QUIC 承载帧协议双进程验证驱动。
-cd /home/debian/code/pairdesk
+cd "$(dirname "$0")/.." || exit 1
 BIN=./target/debug/examples/quic_frame_p2p
 PORT=29601
 rm -rf /tmp/pd-quic
