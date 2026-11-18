@@ -15,9 +15,13 @@ REPO="wmasfoe/pairdesk"
 MODE="deb"
 [ "${1:-}" = "--appimage" ] && MODE="appimage"
 
+# 注意：deb 与 AppImage 的架构命名不同——
+#   .deb      用 Debian 命名：amd64 / arm64
+#   .AppImage 用 Rust target 命名：x86_64 / aarch64
+# 用同一个变量会导致其中一种永远匹配失败。
 case "$(uname -m)" in
-  x86_64|amd64)  ARCH="amd64" ;;
-  aarch64|arm64) ARCH="arm64" ;;
+  x86_64|amd64)  ARCH_DEB="amd64"; ARCH_APPIMAGE="x86_64" ;;
+  aarch64|arm64) ARCH_DEB="arm64"; ARCH_APPIMAGE="aarch64" ;;
   *) echo "❌ 不支持的架构: $(uname -m)"; exit 1 ;;
 esac
 
@@ -41,8 +45,10 @@ if [ "$MODE" = "deb" ]; then
   fi
 
   echo "==> [1/3] 解析 .deb 下载地址"
-  URL="$(get_url "PairDesk_[0-9.]*_${ARCH}\.deb")"
-  [ -z "$URL" ] && { echo "❌ release 中无 ${ARCH} 的 .deb"; exit 1; }
+  # 文件名前缀两种都可能出现：cargo-packager 用二进制名（pairdesk-ui_），
+  # 旧 Tauri 版用 product_name（PairDesk_）。两种都匹配，避免脚本失效。
+  URL="$(get_url "[Pp]air[Dd]esk[-A-Za-z]*_[0-9][0-9.]*_${ARCH_DEB}\.deb")"
+  [ -z "$URL" ] && { echo "❌ release 中无 ${ARCH_DEB} 的 .deb"; exit 1; }
   echo "     $URL"
 
   echo "==> [2/3] 下载并安装"
@@ -57,8 +63,9 @@ if [ "$MODE" = "deb" ]; then
 else
   # ---------- AppImage 免 root ----------
   echo "==> [1/3] 解析 .AppImage 下载地址"
-  URL="$(get_url "PairDesk_[0-9.]*_${ARCH}\.AppImage")"
-  [ -z "$URL" ] && { echo "❌ release 中无 ${ARCH} 的 .AppImage"; exit 1; }
+  # 同 .deb：兼容 pairdesk-ui_ 与 PairDesk_ 两种前缀
+  URL="$(get_url "[Pp]air[Dd]esk[-A-Za-z]*_[0-9][0-9.]*_${ARCH_APPIMAGE}\.AppImage")"
+  [ -z "$URL" ] && { echo "❌ release 中无 ${ARCH_APPIMAGE} 的 .AppImage"; exit 1; }
   echo "     $URL"
 
   echo "==> [2/3] 下载到 ~/.local/bin"

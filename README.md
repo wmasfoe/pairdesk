@@ -83,8 +83,12 @@ CLI：`pairdesk` / `pairdesk-relay` 三平台可用，另附 **MUSL 全静态版
 | 平台 | 产物 |
 |------|------|
 | macOS | `PairDesk_*.dmg`（内含 .app，需在「隐私与安全」授予屏幕录制 / 辅助功能权限） |
-| Windows | `PairDesk_*.msi` |
-| Linux | `.deb` / `.AppImage` / `.rpm` |
+| Windows | `pairdesk-ui_*.msi` |
+| Linux | `pairdesk-ui_*.deb` / `pairdesk-ui_*.AppImage` |
+
+> 文件名前缀不同是 cargo-packager 的行为：macOS 用 `product_name`（PairDesk），
+> Linux/Windows 用二进制名（pairdesk-ui）。应用内「检查更新」只按扩展名匹配
+> （`.dmg` / `.msi` / `.AppImage`），因此不受前缀影响。
 | CLI（三平台） | `pairdesk-<OS>-<arch>` + `pairdesk-relay-<OS>-<arch>` |
 | CLI（Linux 静态） | `pairdesk-linux-x86_64-musl`（零 glibc 依赖） |
 
