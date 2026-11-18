@@ -2,15 +2,18 @@
 #
 # 用法（在仓库根目录）：
 #   cargo install cargo-packager --locked
-#   cargo packager -p pairdesk-ui
+#   cargo packager -p pairdesk-ui --config crates/pairdesk-ui/packager.toml
 #
-# 产物：
-#   macOS   → .dmg / .app
-#   Windows → .msi / .exe
-#   Linux   → .deb / .AppImage
+# 产物（由下方 [formats] 与各平台表共同决定）：
+#   macOS   → PairDesk_<ver>_<arch>.dmg + PairDesk.app
+#   Windows → PairDesk_<ver>_x64_en-US.msi
+#   Linux   → PairDesk_<ver>_amd64.deb / .AppImage
 #
-# 注意：本配置只负责打包 pairdesk-ui（GPUI 壳）。
-# 迁移完成前，Tauri 版仍由 .github/workflows/release.yml 的 `tauri build` 产出。
+# ⚠️ 格式必须与 pairdesk-shell::update::platform_asset_pattern 的匹配规则一致，
+#    否则「检查更新」会找不到安装包、降级到 release 页面：
+#      macOS → aarch64.dmg / x86_64.dmg
+#      Windows → .msi   （不是 NSIS 的 setup.exe）
+#      Linux → .AppImage
 
 name = "PairDesk"
 out_dir = "../../dist"
@@ -25,6 +28,17 @@ description = "两人 P2P 远程协助"
 authors = ["PairDesk"]
 copyright = "Copyright © 2026 PairDesk"
 homepage = "https://github.com/wmasfoe/pairdesk"
+
+# 产物格式：必须显式声明，不能用 default。
+#
+# 原因：cargo-packager 的 default 在各平台包含多余格式——
+#   - Linux 的 default 含 pacman（产出 tar.gz + PKGBUILD，不是安装包）
+#   - Windows 的 default 含 nsis（产出 setup.exe）
+# 而 pairdesk-shell::update::platform_asset_pattern 只认 .dmg / .msi / .AppImage，
+# 多出来的格式会让「检查更新」匹配不到资产，且 release 里混入非安装包文件。
+#
+# 不适用当前平台的格式会被 cargo-packager 自动忽略，因此三平台可共用一份列表。
+formats = ["app", "dmg", "wix", "deb", "appimage"]
 
 # 二进制名与 Cargo.toml 的 [[bin]] name 一致。
 # cargo-packager 默认从 out_dir 找二进制，这里显式指向 cargo 的产物目录。
