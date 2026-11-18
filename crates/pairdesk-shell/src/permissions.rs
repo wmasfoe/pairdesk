@@ -138,30 +138,68 @@ pub fn check_safe() -> PermissionStatus {
         .unwrap_or_else(|_| fallback_status())
 }
 
-/// 触发系统权限弹窗（如 macOS 屏幕录制授权对话框）。
-pub fn request(kind: PermissionKind) -> bool {
-    std::panic::catch_unwind(|| pairdesk_core::permissions::request_permission(kind.as_str()))
-        .unwrap_or(false)
-}
-
-/// 打开系统隐私与安全设置面板。
-pub fn open_settings(kind: PermissionKind) {
-    // 该函数本身不返回值，panic 也无副作用需要兜底
-    let _ = std::panic::catch_unwind(|| {
-        pairdesk_core::permissions::open_permission_settings(kind.as_str())
-    });
-}
-
-/// 权限变化后重启应用。
+/// 用户点击权限横幅后应执行的动作。
 ///
-/// macOS 的 TCC 权限结果按进程缓存：`AXIsProcessTrusted` /
-/// `CGPreflightScreenCaptureAccess` 一旦在本进程读到 false 就持续返回 false。
-/// 用户授权后必须用全新进程重新查询 tccd 才能读到新状态。
-pub fn restart_app() {
-    if let Ok(exe) = std::env::current_exe() {
-        let _ = std::process::Command::new(exe).spawn();
+/// # 为什么领域层只产出「意图」而不执行
+///
+/// 本 crate 是领域层，红线之一是**不做有副作用的系统调用**（见
+/// `docs/architecture/clean-architecture.md`）。权限操作正是典型的有副作用
+/// 调用：`open_settings` 会真的拉起系统设置窗口，`restart_app` 会杀掉进程。
+///
+/// 之前的实现直接在这里执行，导致一个真实问题：**单元测试会弹出系统设置**。
+/// `cargo test -p pairdesk-shell` 每跑一次就弹两次 macOS 设置窗口，CI 上也是。
+///
+/// 改为返回意图后，领域层保持纯函数、可测无副作用；真正执行由适配器层
+/// （`pairdesk-ui`）负责。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PermissionAction {
+    /// 请求某类权限（macOS 会弹系统授权对话框）
+    Request(PermissionKind),
+    /// 打开系统隐私与安全设置面板
+    OpenSettings(PermissionKind),
+    /// 重新检测权限（无副作用，只是重读状态）
+    Recheck,
+    /// 重启应用（macOS 的 TCC 结果按进程缓存，授权后必须重启才能读到新值）
+    Restart,
+}
+
+impl PermissionAction {
+    /// 该动作是否会产生副作用（用于在测试里断言"纯函数不返回副作用动作"）。
+    ///
+    /// `Recheck` 只是重读状态，没有副作用；其余三个都会影响系统或进程。
+    pub fn has_side_effect(self) -> bool {
+        !matches!(self, PermissionAction::Recheck)
     }
-    std::process::exit(0);
+
+    /// 执行该动作后，是否需要延迟重新检测权限。
+    ///
+    /// 只有 `Request` 需要：系统授权对话框是异步的，用户可能几秒后才点允许。
+    /// 其余动作要么无副作用（Recheck），要么立即生效（OpenSettings 让用户自己操作），
+    /// 要么进程已退出（Restart）。
+    pub fn needs_recheck_after(self) -> bool {
+        matches!(self, PermissionAction::Request(_))
+    }
+}
+
+/// 决定点击「请求授权」时该做什么。
+///
+/// 优先请求第一个缺失的权限：一次只弹一个系统对话框，避免同时弹多个把用户
+/// 搞糊涂。全部已授权时返回 `None`（按钮本不该出现，防御性返回）。
+pub fn action_for_request(banner: &PermissionBanner) -> Option<PermissionAction> {
+    banner
+        .missing
+        .first()
+        .copied()
+        .map(PermissionAction::Request)
+}
+
+/// 决定点击「打开系统设置」时该做什么。同 [`action_for_request`]，取第一个缺失项。
+pub fn action_for_open_settings(banner: &PermissionBanner) -> Option<PermissionAction> {
+    banner
+        .missing
+        .first()
+        .copied()
+        .map(PermissionAction::OpenSettings)
 }
 
 #[cfg(test)]
@@ -286,12 +324,82 @@ mod tests {
     }
 
     #[test]
-    fn 权限操作接受正确类型() {
-        // 只验证签名可调用且不 panic（真实系统调用在测试环境无副作用）
-        let _ = request(PermissionKind::Screen);
-        let _ = request(PermissionKind::Accessibility);
-        open_settings(PermissionKind::Screen);
-        open_settings(PermissionKind::Accessibility);
+    fn 请求授权只针对第一个缺失项() {
+        // 两个都缺 → 只请求屏幕录制（一次只弹一个系统对话框）
+        let s = status(false, false, true);
+        let b = banner_for(&s, RequiredFor::Both).unwrap();
+        assert_eq!(
+            action_for_request(&b),
+            Some(PermissionAction::Request(PermissionKind::Screen))
+        );
+
+        // 只有辅助功能缺 → 请求辅助功能
+        let s = status(true, false, true);
+        let b = banner_for(&s, RequiredFor::Both).unwrap();
+        assert_eq!(
+            action_for_request(&b),
+            Some(PermissionAction::Request(PermissionKind::Accessibility))
+        );
+    }
+
+    #[test]
+    fn 打开设置只针对第一个缺失项() {
+        let s = status(false, true, true);
+        let b = banner_for(&s, RequiredFor::Both).unwrap();
+        assert_eq!(
+            action_for_open_settings(&b),
+            Some(PermissionAction::OpenSettings(PermissionKind::Screen))
+        );
+
+        let s = status(true, false, true);
+        let b = banner_for(&s, RequiredFor::Both).unwrap();
+        assert_eq!(
+            action_for_open_settings(&b),
+            Some(PermissionAction::OpenSettings(PermissionKind::Accessibility))
+        );
+    }
+
+    #[test]
+    fn 权限齐全时没有可执行动作() {
+        // 权限齐全 → banner 为 None → 不该产出任何动作
+        let s = status(true, true, true);
+        assert_eq!(banner_for(&s, RequiredFor::Both), None);
+    }
+
+    #[test]
+    fn 副作用动作标记正确() {
+        // Recheck 只是重读状态，无副作用
+        assert!(!PermissionAction::Recheck.has_side_effect());
+
+        // 其余三个都会影响系统或进程
+        assert!(PermissionAction::Request(PermissionKind::Screen).has_side_effect());
+        assert!(PermissionAction::OpenSettings(PermissionKind::Screen).has_side_effect());
+        assert!(PermissionAction::Restart.has_side_effect());
+    }
+
+    #[test]
+    fn 领域层不执行系统操作() {
+        // 这条测试守护架构约束：领域层的权限相关公开 API 不得产生副作用。
+        // 历史上 request/open_settings 直接调 Command::new("open")，
+        // 导致 `cargo test -p pairdesk-shell` 每次都弹出 macOS 系统设置窗口。
+        //
+        // 现在的约束是：这些函数只返回 PermissionAction 意图，
+        // 副作用由适配器层（pairdesk-ui）执行。
+        let s = status(false, false, true);
+        let b = banner_for(&s, RequiredFor::Both).unwrap();
+
+        // 产出的是纯数据，不是已执行的动作
+        let actions: Vec<PermissionAction> = [
+            action_for_request(&b),
+            action_for_open_settings(&b),
+            Some(PermissionAction::Recheck),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        assert_eq!(actions.len(), 3);
+        // 这个断言本身不触发任何系统调用
+        assert!(actions.iter().filter(|a| a.has_side_effect()).count() == 2);
     }
 
     #[test]
