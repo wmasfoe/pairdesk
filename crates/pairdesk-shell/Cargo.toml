@@ -1,6 +1,6 @@
 [package]
 name = "pairdesk-shell"
-version = "0.1.21"
+version = "0.2.0"
 edition = "2021"
 description = "PairDesk 应用层逻辑（UI 无关）：会话状态机 / 凭据生成 / 输入映射 / 更新检查 / 权限视图模型"
 

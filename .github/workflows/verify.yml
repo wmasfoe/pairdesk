@@ -1,0 +1,80 @@
+# verify：main 与 PR 的健康检查（不发布、不打包）
+#
+# 与 release.yml 的分工：
+#   - verify.yml    每次 push 到 main / PR 都跑，只验证「能编译 + 单测绿」
+#   - release.yml   只在打 tag v* 时跑，负责三平台打包与发布
+#
+# 为什么需要这个 workflow：
+#   release.yml 刻意不在 push 到 main 时触发（避免 CI 变绿被误认为"已发版"）。
+#   但 main 分支本身仍需要健康检查——两个各自绿的 PR 合并后仍可能互相冲突，
+#   或者有人直接 push 到 main。这个 workflow 只做最轻的验证，不产出任何安装包。
+#
+# 命名用 verify 而非 ci，是为了和「发版构建」在 Actions 列表里一眼可分：
+#   看到 verify 绿 ≠ 发版了；只有 release 跑完才叫发版。
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify-${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-15, windows-2022]
+    steps:
+      - uses: actions/checkout@v4
+
+      # Linux 需要 gpui 的系统依赖才能编译
+      - name: Install Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential pkg-config \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libfontconfig1-dev libfreetype-dev \
+            libx11-dev libxcb1-dev \
+            libvulkan-dev libssl-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ci-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ci-${{ runner.os }}-
+
+      # Cargo.toml 已启用 runtime_shaders，无需 Metal Toolchain。
+      # 这里装一次仅为保险（失败不阻塞）。
+      - name: Ensure Metal toolchain (macOS)
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        run: xcodebuild -downloadComponent MetalToolchain
+
+      - name: Check (workspace)
+        run: cargo check --workspace --all-targets
+        shell: bash
+
+      - name: Unit tests
+        run: cargo test --lib --workspace
+        shell: bash
+
+      - name: Domain & UI tests
+        run: |
+          cargo test -p pairdesk-shell
+          cargo test -p pairdesk-ui
+        shell: bash

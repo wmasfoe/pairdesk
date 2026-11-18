@@ -11,18 +11,24 @@
 # 与系统权限，仍在真机手测。
 name: release
 
+# 触发条件的设计意图：
+#
+#   - 打 tag v*    → 三平台构建 + 打包 + 发布到 GitHub Release（**唯一的发版入口**）
+#   - 其它情况     → 不触发
+#
+# 为什么 push 到 main 和 PR 都不在这里跑：
+#   合并 PR 后若看到 CI 变绿，很容易误以为"已经发版了"，但实际什么都没发布。
+#   发版只认 tag —— 要发版就显式打 tag，语义清晰、不会误判。
+#   main 与 PR 的健康检查由 ci.yml 负责（轻量，不打包）。
+#
+# 手动 dispatch 保留，用于补发某个已存在的 tag（如 CI 曾失败）。
 on:
   push:
-    branches: [main]
     tags: ['v*']
-  # PR 也要跑：这是三平台 GPUI 编译验证的唯一途径
-  # （本机 macOS 无法交叉验证 Linux 的系统库与 Windows 的 fxc.exe）
-  pull_request:
-    branches: [main]
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Existing tag to build and publish (leave empty for build only)'
+        description: '要重新构建并发布的 tag（如 v0.2.0）。留空则只构建不发布。'
         required: false
         type: string
 
@@ -94,6 +100,19 @@ jobs:
               mv "$f.tmp" "$f"
               echo "  $f -> $(grep -m1 '^version' "$f")"
             done
+
+            # Info.plist 的版本号也必须同步，否则 macOS 的「关于本机」和
+            # CFBundleShortVersionString 会永远停在手写值，与实际安装包不一致。
+            # 只替换紧跟这两个 key 的 <string>，不影响其他键。
+            PLIST=crates/pairdesk-ui/Info.plist
+            awk -v v="$VER" '
+              /<key>CFBundleVersion<\/key>/        { want=1; print; next }
+              /<key>CFBundleShortVersionString<\/key>/ { want=1; print; next }
+              want && /<string>/ { sub(/<string>[^<]*<\/string>/, "<string>" v "<\/string>"); want=0 }
+              { print }
+            ' "$PLIST" > "$PLIST.tmp"
+            mv "$PLIST.tmp" "$PLIST"
+            echo "  $PLIST -> $(grep -A1 CFBundleShortVersionString "$PLIST" | grep -o '[0-9][0-9.]*')"
           else
             echo "Not a tag build, keeping Cargo.toml versions as-is"
           fi
@@ -117,10 +136,7 @@ jobs:
         shell: bash
 
       # ---- 打包安装包（.dmg / .msi / .deb + .AppImage）----
-      # PR 上跳过：打包耗时长且易受环境影响（如 macOS 的 Finder AppleScript），
-      # PR 阶段的核心目的是验证「能编译 + 单测绿」。
       - name: Package
-        if: github.event_name != 'pull_request'
         run: |
           cargo install cargo-packager --locked
           # 按平台指定格式：cargo-packager 不会忽略不适用当前平台的格式
@@ -183,6 +199,9 @@ jobs:
 
   release:
     name: publish
+    # 只在「打 tag」或「手动指定 release_tag」时发布。
+    # PR 与非 tag 的 push 一律跳过 —— 跳过时 GitHub 会标成 skipped，
+    # 不会伪装成 success，避免误以为已发版。
     if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag
     needs: build
     runs-on: ubuntu-latest

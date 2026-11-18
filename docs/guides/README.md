@@ -7,7 +7,16 @@
 | 文件 | 回答什么问题 |
 |---|---|
 | [`build.md`](build.md) | 本地构建、单测、跑起来、三平台依赖 |
+| [`release.md`](release.md) | 发版流程：打 tag → CI 构建 → 发布 |
 | [`relay-deploy.md`](relay-deploy.md) | 中继服务器部署到 VPS |
+
+## 发版一句话
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+只有打 tag 才会发版。合并 PR 到 main **不会**发版（只会跑 verify 检查）。
 
 ## 快速命令
 

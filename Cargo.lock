@@ -4141,7 +4141,7 @@ dependencies = [
 
 [[package]]
 name = "pairdesk-core"
-version = "0.1.21"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "chacha20poly1305",
@@ -4163,14 +4163,14 @@ dependencies = [
 
 [[package]]
 name = "pairdesk-relay"
-version = "0.1.21"
+version = "0.2.0"
 dependencies = [
  "anyhow",
 ]
 
 [[package]]
 name = "pairdesk-shell"
-version = "0.1.21"
+version = "0.2.0"
 dependencies = [
  "pairdesk-core",
  "rand 0.8.7",
@@ -4180,7 +4180,7 @@ dependencies = [
 
 [[package]]
 name = "pairdesk-ui"
-version = "0.1.21"
+version = "0.2.0"
 dependencies = [
  "futures-util",
  "gpui",
