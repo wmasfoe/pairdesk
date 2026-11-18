@@ -15,6 +15,10 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+  # PR 也要跑：这是三平台 GPUI 编译验证的唯一途径
+  # （本机 macOS 无法交叉验证 Linux 的系统库与 Windows 的 fxc.exe）
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       release_tag:
@@ -113,7 +117,10 @@ jobs:
         shell: bash
 
       # ---- 打包安装包（.dmg / .msi / .deb + .AppImage）----
+      # PR 上跳过：打包耗时长且易受环境影响（如 macOS 的 Finder AppleScript），
+      # PR 阶段的核心目的是验证「能编译 + 单测绿」。
       - name: Package
+        if: github.event_name != 'pull_request'
         run: |
           cargo install cargo-packager --locked
           cargo packager -p pairdesk-ui --config crates/pairdesk-ui/packager.toml
