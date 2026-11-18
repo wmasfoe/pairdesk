@@ -765,8 +765,8 @@ impl PairDeskApp {
     ) -> impl IntoElement {
         let missing = banner.missing.clone();
         // 每个按钮闭包需要独立的副本（闭包是 move 的）
-        let missing_request = missing.clone();
-        let missing_open = missing.clone();
+        let banner_for_request = banner.clone();
+        let banner_for_open = banner.clone();
         let kinds: Vec<&'static str> = missing.iter().map(|k| k.label()).collect();
 
         div()
@@ -801,24 +801,24 @@ impl PairDeskApp {
                             .small()
                             .primary()
                             .label("请求授权")
-                            .on_click(cx.listener(move |app, _, _, cx| {
-                                // 触发 macOS 系统权限弹窗（屏幕录制会弹系统对话框）
-                                if let Some(kind) = missing_request.first() {
-                                    permissions::request(*kind);
+                            .on_click(cx.listener(move |_app, _, _, cx| {
+                                // 领域层只产出意图，执行在适配器层
+                                if let Some(action) = permissions::action_for_request(&banner_for_request) {
+                                    if crate::permission_exec::execute(action) {
+                                        // 系统对话框是异步的，1 秒后重查
+                                        cx.spawn(async move |this, cx| {
+                                            cx.background_executor()
+                                                .timer(std::time::Duration::from_millis(1000))
+                                                .await;
+                                            this.update(cx, |app, cx| {
+                                                app.perm_status = permissions::check_safe();
+                                                cx.notify();
+                                            })
+                                            .ok();
+                                        })
+                                        .detach();
+                                    }
                                 }
-                                // 稍后重新检测（用户可能已授权）
-                                cx.spawn(async move |this, cx| {
-                                    cx.background_executor()
-                                        .timer(std::time::Duration::from_millis(1000))
-                                        .await;
-                                    this.update(cx, |app, cx| {
-                                        app.perm_status = permissions::check_safe();
-                                        cx.notify();
-                                    })
-                                    .ok();
-                                })
-                                .detach();
-                                let _ = app;
                             })),
                     )
                     .child(
@@ -826,9 +826,10 @@ impl PairDeskApp {
                             .small()
                             .label("打开系统设置")
                             .on_click(cx.listener(move |_app, _, _, _cx| {
-                                // 打开第一个缺失权限对应的系统设置面板
-                                if let Some(kind) = missing_open.first() {
-                                    permissions::open_settings(*kind);
+                                if let Some(action) =
+                                    permissions::action_for_open_settings(&banner_for_open)
+                                {
+                                    crate::permission_exec::execute(action);
                                 }
                             })),
                     )
@@ -847,8 +848,9 @@ impl PairDeskApp {
                             .label("重启应用")
                             .on_click(cx.listener(|_app, _, _, _cx| {
                                 // macOS 的 TCC 权限按进程缓存，授权后必须重启才能读到新状态。
-                                // restart_app 会 spawn 新进程后 exit，不再返回。
-                                permissions::restart_app();
+                                crate::permission_exec::execute(
+                                    pairdesk_shell::permissions::PermissionAction::Restart,
+                                );
                             })),
                     ),
             )

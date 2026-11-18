@@ -35,6 +35,13 @@ on:
 permissions:
   contents: write   # publish 需要创建 GitHub Release / 上传 asset
 
+# 同一个 tag 只允许一个 release 在跑，避免重复打 tag / 手动 dispatch 时
+# 多个 run 争抢 runner。macOS runner 尤其紧张——实测有过排队 15 分钟后
+# 被 GitHub 直接 cancelled（0 个步骤）的情况。
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false   # 不取消正在跑的，避免发布到一半中断
+
 jobs:
   build:
     name: build-${{ matrix.os }}

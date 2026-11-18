@@ -5,6 +5,7 @@
 
 mod app_view;
 mod frame;
+mod permission_exec;
 mod video_view;
 mod session_host;
 mod theme;
