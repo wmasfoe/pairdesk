@@ -88,3 +88,9 @@ jobs:
           cargo test -p pairdesk-shell
           cargo test -p pairdesk-ui
         shell: bash
+
+      # 守护测试：防止在 GPUI executor 里用 tokio-only 的异步 API
+      # （会导致 panic → 进程退出，见 docs/architecture/gpui-constraints.md §3）
+      - name: GPUI executor guard
+        run: cargo test -p pairdesk-ui --test no_tokio_in_gpui_executor
+        shell: bash

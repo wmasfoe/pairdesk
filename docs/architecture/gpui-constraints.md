@@ -44,7 +44,113 @@ xcodebuild -downloadComponent MetalToolchain
 
 CI 的 `macos-15` runner 同样会撞，**必须在 workflow 里二选一**。
 
-## 3. 帧泵：不要在 render() 里 cx.notify()
+## 3. 异步执行器不是 tokio —— 别在 cx.spawn 里用 tokio 生态的异步库
+
+**这是本项目踩过最严重的一个坑：点了「检查更新」App 直接退出，没有任何提示。**
+
+### 现象
+
+```rust
+// 看起来完全正常的代码
+cx.spawn(async move |this, cx| {
+    let result = reqwest::get(url).await;   // ← 这里 panic
+    this.update(cx, |app, cx| { /* ... */ }).ok();
+}).detach();
+```
+
+点按钮后进程消失，日志里没有应用层的错误，只有系统日志里一行：
+
+```
+thread panicked at hyper-util/src/client/legacy/connect/dns.rs:118
+there is no reactor running, must be called from the context of a Tokio 1.x runtime
+```
+
+### 根因
+
+GPUI 的异步执行器基于 `async-task` + `smol`，**不是 tokio**：
+
+```toml
+# gpui 0.2.2 的依赖
+[dependencies.async-task]   # 不是 tokio
+[dependencies.smol]
+```
+
+而 `reqwest` / `hyper` / `tokio::net` 等库的异步 API 内部依赖 tokio reactor。
+在非 tokio 上下文里 poll 它们 → panic。panic 发生在 GPUI 的 executor 线程里，
+**直接终止整个进程**，所以用户看到的是「点一下 App 就没了」。
+
+最小复现（不需要 GPUI）：
+
+```rust
+// 在普通 std::thread 里 poll 一次 reqwest 的异步 future
+let fut = async { reqwest::Client::new().get(url).send().await };
+// → panic: there is no reactor running
+```
+
+### 正确做法：阻塞 API + 独立线程
+
+```rust
+pub async fn check() -> Result<UpdateInfo, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    // 网络 I/O 在独立 std 线程里跑，用 blocking 版（内部自建 tokio runtime）
+    std::thread::Builder::new()
+        .name("pd-update-check".into())
+        .spawn(move || {
+            let _ = tx.send(check_blocking());   // reqwest::blocking
+        })
+        .map_err(|e| format!("启动线程失败: {e}"))?;
+
+    // 在 GPUI executor 上等结果
+    loop {
+        match rx.try_recv() {
+            Ok(result) => return result,
+            Err(mpsc::TryRecvError::Empty) => {
+                // 必须用定时器休眠，不能裸 yield 空转（会把一个核跑满）
+                futures_timer::Delay::new(Duration::from_millis(20)).await;
+            }
+            Err(mpsc::TryRecvError::Disconnected) => {
+                return Err("线程异常退出".into());
+            }
+        }
+    }
+}
+```
+
+三个必须注意的点：
+
+| 点 | 原因 |
+|---|---|
+| 用 `reqwest::blocking` | 它内部自建 tokio runtime，不依赖外部 executor |
+| 等待用 `futures-timer` 休眠 | 裸 `try_recv` + `yield_now` 会把一个核跑到 100%（实测 1.5% → 0%） |
+| 回调参数必须 `Send` | 回调跑在独立线程，`Rc<RefCell>` 要换成 `Arc<Mutex>` |
+
+### 哪些库受影响
+
+只要底层是 tokio 的异步 API 都中招：
+
+- `reqwest`（异步）
+- `hyper`（异步）
+- `tokio::net` / `tokio::fs` / `tokio::time`
+- 任何依赖上述的库（如 `sqlx`、`redis` 的 async 版）
+
+**不受影响**：`std::net` / `std::fs`（阻塞）、`smol` / `async-io` 生态、
+`reqwest::blocking`、以及 GPUI 自带的 `zed-reqwest`。
+
+### 判定口诀
+
+> 在 `cx.spawn` 里要写 `.await` 的第三方库，先确认它是不是 tokio-only。
+> 是 → 换成阻塞版 + 独立线程，或找该库的非 tokio 实现。
+
+### 其他已知会崩的操作
+
+| 操作 | 后果 | 正确做法 |
+|---|---|---|
+| `tokio::time::sleep().await` | 同上 panic | `cx.background_executor().timer(..).await` |
+| `tokio::spawn(...)` | panic: no reactor | `cx.spawn(...)` 或 `std::thread::spawn` |
+| `reqwest` 异步 API | 同上 panic | `reqwest::blocking` + 独立线程 |
+
+## 4. 帧泵：不要在 render() 里 cx.notify()
 
 **这是本项目最关键的坑。** 远程画面需要 20fps 刷新。
 
@@ -78,7 +184,7 @@ fn pump(&mut self, cx: &mut Context<Self>) {
 }
 ```
 
-## 4. 纹理必须显式释放
+## 5. 纹理必须显式释放
 
 每帧 `RenderImage::new()` 都会在 GPU atlas 里占一块。**不释放会无限增长**直到显存耗尽。
 
@@ -90,7 +196,7 @@ if let Some(old) = self.frame.replace(new_frame) {
 
 实测：正确释放时 RSS 稳定在 **129 MB**（连续 30 秒 20fps 1080p 不涨）。
 
-## 5. 图片必须是 BGRA
+## 6. 图片必须是 BGRA
 
 `RenderImage` 要求 `image::Frame` 包裹的 **RGBA8** 数据，GPUI 内部按 BGRA 解释。从 JPEG 解码后需要：
 
@@ -103,7 +209,7 @@ for c in rgb.chunks_exact(3) {
 let frame = Frame::new(image::RgbaImage::from_raw(w, h, rgba)?);
 ```
 
-## 6. 性能实测基线
+## 7. 性能实测基线
 
 | 指标 | 实测值 | 备注 |
 |---|---|---|
@@ -116,7 +222,7 @@ let frame = Frame::new(image::RgbaImage::from_raw(w, h, rgba)?);
 
 20fps 预算 50ms/帧，解码占 3.4ms ≈ 7%，**余量充足**。
 
-## 7. 组件库能力（gpui-component 0.5.x）
+## 8. 组件库能力（gpui-component 0.5.x）
 
 可直接用：`Button`、`Input`（含 IME/选区/剪贴板）、`Switch`、`Root`、`Text`、`Icon`、`Tab`、`Modal`。
 
@@ -126,7 +232,7 @@ let frame = Frame::new(image::RgbaImage::from_raw(w, h, rgba)?);
 - 剪贴板 → `cx.write_to_clipboard()`
 - 打开 URL → `cx.open_url()`
 
-## 8. 平台后端成熟度
+## 9. 平台后端成熟度
 
 | 平台 | 窗口 | GPU | 成熟度 |
 |---|---|---|---|
@@ -158,7 +264,20 @@ let frame = Frame::new(image::RgbaImage::from_raw(w, h, rgba)?);
 - 渲染走 Vulkan，**无 Vulkan 驱动的环境起不来**（虚拟机、老显卡）。
 - 中文字体回退是已知弱项，源码里有 `// HACK: ... should actually do better font fallback`，**建议内置中文子集字体**。
 
-## 9. 测试
+## 10. 测试
+
+### 自动守护：tokio API 静态扫描
+
+`crates/pairdesk-ui/tests/no_tokio_in_gpui_executor.rs` 会扫描 `src/`，
+发现 `reqwest::get` / `hyper::` / `tokio::net` 等写法就失败，并给出文件与行号。
+
+```bash
+cargo test -p pairdesk-ui --test no_tokio_in_gpui_executor
+```
+
+CI 的 `verify.yml` 已包含这一步。这条守护是为了防 §3 那个崩溃再次出现——
+它排查成本很高（应用层无任何错误日志）。
+
 
 `gpui` 的 `test-support` feature 提供 `TestAppContext` + `simulate_*`，可无头驱动 UI。
 
