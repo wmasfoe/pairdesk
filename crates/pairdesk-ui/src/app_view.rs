@@ -74,6 +74,10 @@ pub struct PairDeskApp {
 
     // ---------- 权限 ----------
     perm_status: pairdesk_core::permissions::PermissionStatus,
+    /// 权限操作后的引导提示（如「请去系统设置勾选后重启应用」）。
+    /// macOS 的 TCC 按进程缓存，授权后当前进程仍读到未授权，
+    /// 必须明确告诉用户重启，否则会以为按钮没反应。
+    perm_hint: Option<SharedString>,
 
     // ---------- 更新 ----------
     update_msg: Option<SharedString>,
@@ -104,7 +108,26 @@ impl PairDeskApp {
         viewer_target.update(cx, |st, cx| st.set_value(DEFAULT_RELAY, window, cx));
 
         // 权限检测：失败时兜底为"全都有"，不阻塞用户（封装在领域层）
-        let perm_status = permissions::check_safe();
+        // 自测：PD_FAKE_PERM=screen|accessibility|both 强制显示权限缺失横幅。
+        // 用于在已授权的开发机上验证引导 UI（否则横幅永远不出现）。
+        let perm_status = match std::env::var("PD_FAKE_PERM").as_deref() {
+            Ok("screen") => pairdesk_core::permissions::PermissionStatus {
+                screen_recording: false,
+                accessibility: true,
+                need_guidance: true,
+            },
+            Ok("accessibility") => pairdesk_core::permissions::PermissionStatus {
+                screen_recording: true,
+                accessibility: false,
+                need_guidance: true,
+            },
+            Ok("both") => pairdesk_core::permissions::PermissionStatus {
+                screen_recording: false,
+                accessibility: false,
+                need_guidance: true,
+            },
+            _ => permissions::check_safe(),
+        };
 
         // 自测入口：PD_START_PAGE=host|viewer 直接进入指定页面（UI 自动化验证用）
         let page = match std::env::var("PD_START_PAGE").as_deref() {
@@ -134,6 +157,7 @@ impl PairDeskApp {
             viewer_mode: ConnectionMode::Relay,
             viewer_advanced_open: false,
             perm_status,
+            perm_hint: None,
             update_msg: None,
             update_checking: false,
             update_info: None,
@@ -144,6 +168,18 @@ impl PairDeskApp {
 
         if let Some(role) = autostart {
             app.prepare_autostart(role, window, cx);
+        }
+
+        // 自测：PD_AUTO_CLICK_PERM=1 时自动触发一次「请求授权」，
+        // 用于验证「点击 → 执行 → 显示提示」整条链路（无需真实鼠标点击）。
+        if std::env::var("PD_AUTO_CLICK_PERM").is_ok() {
+            let banner = permissions::banner_for(&app.perm_status, RequiredFor::Both);
+            if let Some(b) = banner {
+                if let Some(click) = permissions::on_request_click(&b) {
+                    crate::permission_exec::execute(click.action);
+                    app.perm_hint = Some(SharedString::from(click.hint));
+                }
+            }
         }
         app
     }
@@ -792,6 +828,19 @@ impl PairDeskApp {
                     .text_color(pal.fg_muted)
                     .child(format!("缺少权限：{}", kinds.join("、"))),
             )
+            // 操作后的引导提示：告诉用户去系统设置勾选 + 重启应用。
+            // 没有这条提示，用户点「请求授权」后看不到任何变化，会以为按钮失效。
+            .when_some(self.perm_hint.clone(), |this, hint| {
+                this.child(
+                    div()
+                        .p(px(10.))
+                        .rounded(size::radius_sm())
+                        .bg(pal.primary_soft)
+                        .text_size(px(12.))
+                        .text_color(pal.primary)
+                        .child(hint),
+                )
+            })
             .child(
                 div()
                     .h_flex()
@@ -801,44 +850,45 @@ impl PairDeskApp {
                             .small()
                             .primary()
                             .label("请求授权")
-                            .on_click(cx.listener(move |_app, _, _, cx| {
-                                // 领域层只产出意图，执行在适配器层
-                                if let Some(action) = permissions::action_for_request(&banner_for_request) {
-                                    if crate::permission_exec::execute(action) {
-                                        // 系统对话框是异步的，1 秒后重查
-                                        cx.spawn(async move |this, cx| {
-                                            cx.background_executor()
-                                                .timer(std::time::Duration::from_millis(1000))
-                                                .await;
-                                            this.update(cx, |app, cx| {
-                                                app.perm_status = permissions::check_safe();
-                                                cx.notify();
-                                            })
-                                            .ok();
-                                        })
-                                        .detach();
-                                    }
+                            .on_click(cx.listener(move |app, _, _, cx| {
+                                // 领域层产出「动作 + 提示」，适配器只负责执行与显示。
+                                // 提示不能省：macOS 的 TCC 按进程缓存，用户刚授权时
+                                // 当前进程仍读到 false，不提示重启会让用户以为按钮失效。
+                                if let Some(click) =
+                                    permissions::on_request_click(&banner_for_request)
+                                {
+                                    crate::permission_exec::execute(click.action);
+                                    app.perm_hint = Some(SharedString::from(click.hint));
+                                    cx.notify();
                                 }
-                            })),
-                    )
+                            })),                    )
                     .child(
                         Button::new("perm-open")
                             .small()
                             .label("打开系统设置")
-                            .on_click(cx.listener(move |_app, _, _, _cx| {
-                                if let Some(action) =
-                                    permissions::action_for_open_settings(&banner_for_open)
+                            .on_click(cx.listener(move |app, _, _, cx| {
+                                if let Some(click) =
+                                    permissions::on_open_settings_click(&banner_for_open)
                                 {
-                                    crate::permission_exec::execute(action);
+                                    crate::permission_exec::execute(click.action);
+                                    app.perm_hint = Some(SharedString::from(click.hint));
+                                    cx.notify();
                                 }
-                            })),
-                    )
+                            })),                    )
                     .child(
                         Button::new("perm-recheck")
                             .small()
                             .label("重新检测")
                             .on_click(cx.listener(|app, _, _, cx| {
                                 app.perm_status = permissions::check_safe();
+                                // 权限已齐 → 清掉引导提示
+                                if !app.perm_status.screen_recording
+                                    || !app.perm_status.accessibility
+                                {
+                                    // 仍缺 → 保留提示（说明还需重启或授权）
+                                } else {
+                                    app.perm_hint = None;
+                                }
                                 cx.notify();
                             })),
                     )

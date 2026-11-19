@@ -82,6 +82,56 @@ impl PermissionBanner {
     }
 }
 
+/// 「请求授权」之后给用户的引导文案。
+///
+/// 为什么需要：macOS 的 TCC 权限按进程缓存，用户刚在系统设置里勾选后，
+/// 当前进程仍读到未授权。直接重查会让用户误以为「点了没反应」。
+/// 必须明确告诉用户：去系统设置勾选，然后重启应用。
+pub fn post_request_hint(kind: PermissionKind) -> String {
+    match kind {
+        PermissionKind::Screen => {
+            "已打开系统授权对话框。请在「系统设置 → 隐私与安全性 → 屏幕录制」中\
+             勾选 PairDesk，然后点「重启应用」使其生效。"
+                .to_string()
+        }
+        PermissionKind::Accessibility => {
+            "已打开系统授权对话框。请在「系统设置 → 隐私与安全性 → 辅助功能」中\
+             勾选 PairDesk，然后点「重启应用」使其生效。"
+                .to_string()
+        }
+    }
+}
+
+/// 点击「请求授权」或「打开系统设置」后的完整结果。
+///
+/// 把「要执行什么动作」和「要给用户什么提示」打包在一起，
+/// 让 UI 层不必自己拼装，也让这段逻辑可单测。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PermissionClick {
+    /// 要执行的动作
+    pub action: PermissionAction,
+    /// 执行后显示给用户的引导提示
+    pub hint: String,
+}
+
+/// 处理「请求授权」点击。
+pub fn on_request_click(banner: &PermissionBanner) -> Option<PermissionClick> {
+    let kind = *banner.missing.first()?;
+    Some(PermissionClick {
+        action: PermissionAction::Request(kind),
+        hint: post_request_hint(kind),
+    })
+}
+
+/// 处理「打开系统设置」点击。
+pub fn on_open_settings_click(banner: &PermissionBanner) -> Option<PermissionClick> {
+    let kind = *banner.missing.first()?;
+    Some(PermissionClick {
+        action: PermissionAction::OpenSettings(kind),
+        hint: post_request_hint(kind),
+    })
+}
+
 /// 根据内核报告的权限状态与当前角色，算出横幅该怎么显示。
 ///
 /// 判定顺序严格对应 `PermissionBanner.tsx`：
@@ -177,6 +227,18 @@ impl PermissionAction {
     /// 其余动作要么无副作用（Recheck），要么立即生效（OpenSettings 让用户自己操作），
     /// 要么进程已退出（Restart）。
     pub fn needs_recheck_after(self) -> bool {
+        matches!(self, PermissionAction::Request(_))
+    }
+
+    /// 执行该动作后，是否必须重启应用才能让新权限生效。
+    ///
+    /// macOS 的 TCC 权限结果按**进程**缓存：`AXIsProcessTrusted` /
+    /// `CGPreflightScreenCaptureAccess` 一旦在本进程读到 false 就持续返回 false，
+    /// 即使用户已经在系统设置里勾选了。必须用全新进程重新查询 tccd。
+    ///
+    /// 因此「请求授权」后不能只做重查——重查必然还是 false，用户会以为
+    /// 按钮没反应。UI 应当提示用户重启。
+    pub fn requires_restart_after(self) -> bool {
         matches!(self, PermissionAction::Request(_))
     }
 }
@@ -375,6 +437,67 @@ mod tests {
         assert!(PermissionAction::Request(PermissionKind::Screen).has_side_effect());
         assert!(PermissionAction::OpenSettings(PermissionKind::Screen).has_side_effect());
         assert!(PermissionAction::Restart.has_side_effect());
+    }
+
+    #[test]
+    fn 请求授权后必须重启才生效() {
+        // macOS 的 TCC 按进程缓存：授权后当前进程仍读到 false，
+        // 必须重启才能读到新值。UI 据此提示用户。
+        assert!(PermissionAction::Request(PermissionKind::Screen).requires_restart_after());
+        assert!(PermissionAction::Request(PermissionKind::Accessibility).requires_restart_after());
+
+        // 其余动作不需要重启
+        assert!(!PermissionAction::Recheck.requires_restart_after());
+        assert!(!PermissionAction::OpenSettings(PermissionKind::Screen).requires_restart_after());
+    }
+
+    #[test]
+    fn 引导文案指向正确的设置面板() {
+        let screen = post_request_hint(PermissionKind::Screen);
+        assert!(screen.contains("屏幕录制"), "应指向屏幕录制面板: {screen}");
+        assert!(screen.contains("重启"), "应提示重启: {screen}");
+
+        let access = post_request_hint(PermissionKind::Accessibility);
+        assert!(access.contains("辅助功能"), "应指向辅助功能面板: {access}");
+        assert!(access.contains("重启"), "应提示重启: {access}");
+    }
+
+    #[test]
+    fn 点击请求授权返回动作与提示() {
+        let s = status(true, false, true);
+        let b = banner_for(&s, RequiredFor::Both).unwrap();
+
+        let click = on_request_click(&b).expect("应产出点击结果");
+        assert_eq!(
+            click.action,
+            PermissionAction::Request(PermissionKind::Accessibility)
+        );
+        // 提示必须包含设置面板名与「重启」，否则用户不知道该干什么
+        assert!(click.hint.contains("辅助功能"), "hint={}", click.hint);
+        assert!(click.hint.contains("重启"), "hint={}", click.hint);
+        // 提示不能是空串（历史上这里返回空 → 用户以为按钮没反应）
+        assert!(!click.hint.is_empty());
+    }
+
+    #[test]
+    fn 点击打开设置返回动作与提示() {
+        let s = status(false, true, true);
+        let b = banner_for(&s, RequiredFor::Both).unwrap();
+
+        let click = on_open_settings_click(&b).expect("应产出点击结果");
+        assert_eq!(
+            click.action,
+            PermissionAction::OpenSettings(PermissionKind::Screen)
+        );
+        assert!(click.hint.contains("屏幕录制"), "hint={}", click.hint);
+    }
+
+    #[test]
+    fn 无缺失权限时不产出点击结果() {
+        // 防御性：横幅本不该出现，但若被调用也不能 panic
+        let empty = PermissionBanner { missing: vec![] };
+        assert_eq!(on_request_click(&empty), None);
+        assert_eq!(on_open_settings_click(&empty), None);
     }
 
     #[test]
