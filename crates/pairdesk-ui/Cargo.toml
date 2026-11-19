@@ -24,12 +24,14 @@ zune-jpeg = "0.4"
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 
 # 更新检查的网络请求
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "blocking"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 futures-util = "0.3"
 # 安装包完整性校验（GitHub Release 的 asset.digest 是 sha256）
 sha2 = "0.10"
+# 轻量异步定时器：用于等待后台线程结果时让出 CPU（不依赖 tokio）
+futures-timer = "3"
 
 [dev-dependencies]
 # 仅用于 update::download_installer 的异步单测

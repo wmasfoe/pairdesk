@@ -2,6 +2,25 @@
 //!
 //! 纯计算（版本比较、资产匹配）在 `pairdesk-shell::update`，有单测覆盖。
 //! 这里只负责发起 HTTP 请求并把结果交给领域层组装。
+//!
+//! # 为什么用阻塞 reqwest + 独立线程
+//!
+//! GPUI 的异步执行器基于 `async-task` + `smol`，**不是 tokio**。
+//! 而 `reqwest` 的异步 API 内部依赖 tokio reactor，在非 tokio 上下文调用会
+//! panic：
+//!
+//! ```text
+//! there is no reactor running, must be called from the context of a Tokio 1.x runtime
+//! ```
+//!
+//! 这个 panic 发生在 GPUI 的 executor 线程里，会直接终止整个进程 ——
+//! 表现为「点检查更新，App 立刻退出」。
+//!
+//! 因此这里改用 `reqwest::blocking`（它内部自建 tokio runtime），跑在
+//! 独立的 std 线程里，结果通过 channel 回传给 GPUI 的异步任务。
+//! 这样既不依赖 GPUI 的 executor 类型，也不会阻塞 UI 线程。
+
+use std::sync::mpsc;
 
 use pairdesk_shell::update::{build_update_info, UpdateInfo};
 
@@ -13,16 +32,49 @@ pub fn current_version() -> &'static str {
 }
 
 /// 请求 GitHub 最新 release 并组装更新信息。
+///
+/// 返回的 future 在 GPUI 的 executor 上跑，但真正的网络 I/O 在独立线程里。
 pub async fn check() -> Result<UpdateInfo, String> {
-    let client = reqwest::Client::builder()
+    // 在独立线程里做阻塞请求，避免污染 GPUI 的 executor
+    let (tx, rx) = mpsc::channel();
+    std::thread::Builder::new()
+        .name("pd-update-check".into())
+        .spawn(move || {
+            let result = check_blocking();
+            let _ = tx.send(result);
+        })
+        .map_err(|e| format!("启动更新检查线程失败: {e}"))?;
+
+    // 等待结果。
+    //
+    // 关键：不能直接阻塞 recv() —— 会占死 GPUI 的 executor 线程，UI 卡住。
+    // 也不能裸 try_recv + yield 空转 —— 会把一个核跑满。
+    // 这里每 20ms 轮询一次，中间用 futures-timer 真正休眠（不占 CPU），
+    // 且不依赖任何特定 executor（tokio/smol 都能跑）。
+    loop {
+        match rx.try_recv() {
+            Ok(result) => return result,
+            Err(mpsc::TryRecvError::Empty) => {
+                futures_timer::Delay::new(std::time::Duration::from_millis(20)).await;
+            }
+            Err(mpsc::TryRecvError::Disconnected) => {
+                return Err("更新检查线程异常退出".to_string());
+            }
+        }
+    }
+}
+
+/// 阻塞版本的检查逻辑。只在独立线程里调用。
+fn check_blocking() -> Result<UpdateInfo, String> {
+    let client = reqwest::blocking::Client::builder()
         .user_agent("PairDesk-App")
+        .timeout(std::time::Duration::from_secs(20))
         .build()
         .map_err(|e| e.to_string())?;
 
     let res = client
         .get(RELEASES_API)
         .send()
-        .await
         .map_err(|e| format!("检查更新失败: {e}"))?;
 
     if !res.status().is_success() {
@@ -31,7 +83,6 @@ pub async fn check() -> Result<UpdateInfo, String> {
 
     let json: serde_json::Value = res
         .json()
-        .await
         .map_err(|e| format!("解析更新响应失败: {e}"))?;
 
     let tag_name = json["tag_name"].as_str().unwrap_or("");
@@ -54,7 +105,6 @@ pub async fn check() -> Result<UpdateInfo, String> {
         .unwrap_or_default();
 
     // 先组装（不含 digest），再按选中的 URL 回查 digest。
-    // 分两步是因为 build_update_info 内部才决定用哪个资产（按平台 pattern 匹配）。
     let mut info = build_update_info(
         current_version(),
         tag_name,
@@ -69,9 +119,7 @@ pub async fn check() -> Result<UpdateInfo, String> {
         .as_array()
         .and_then(|arr| {
             arr.iter()
-                .find(|a| {
-                    a["browser_download_url"].as_str() == Some(info.download_url.as_str())
-                })
+                .find(|a| a["browser_download_url"].as_str() == Some(info.download_url.as_str()))
                 .and_then(|a| a["digest"].as_str())
                 .map(str::to_string)
         });
@@ -91,28 +139,58 @@ pub struct DownloadProgress {
 
 /// 下载安装包到临时目录，返回文件路径。
 ///
-/// `on_progress` 会被频繁调用，调用方应避免在其中做重活。
+/// 同 [`check`]：阻塞请求跑在独立线程，避免 reqwest 在非 tokio executor 上 panic。
+/// `on_progress` 在**独立线程**里被调用，因此不能直接碰 GPUI 的 Context。
 pub async fn download_installer(
+    url: &str,
+    expected_sha256: Option<&str>,
+    on_progress: impl FnMut(DownloadProgress) + Send + 'static,
+) -> Result<std::path::PathBuf, String> {
+    let url = url.to_string();
+    let expected = expected_sha256.map(str::to_string);
+
+    let (tx, rx) = mpsc::channel();
+    std::thread::Builder::new()
+        .name("pd-update-download".into())
+        .spawn(move || {
+            let result = download_blocking(&url, expected.as_deref(), on_progress);
+            let _ = tx.send(result);
+        })
+        .map_err(|e| format!("启动下载线程失败: {e}"))?;
+
+    loop {
+        match rx.try_recv() {
+            Ok(result) => return result,
+            Err(mpsc::TryRecvError::Empty) => {
+                futures_timer::Delay::new(std::time::Duration::from_millis(20)).await;
+            }
+            Err(mpsc::TryRecvError::Disconnected) => {
+                return Err("下载线程异常退出".to_string());
+            }
+        }
+    }
+}
+
+fn download_blocking(
     url: &str,
     expected_sha256: Option<&str>,
     mut on_progress: impl FnMut(DownloadProgress),
 ) -> Result<std::path::PathBuf, String> {
-    use futures_util::StreamExt;
-    use std::io::Write;
+    use std::io::{Read, Write};
 
     if url.is_empty() {
         return Err("下载地址为空".into());
     }
 
-    let client = reqwest::Client::builder()
+    let client = reqwest::blocking::Client::builder()
         .user_agent("PairDesk-App")
+        .timeout(std::time::Duration::from_secs(600))
         .build()
         .map_err(|e| e.to_string())?;
 
-    let res = client
+    let mut res = client
         .get(url)
         .send()
-        .await
         .map_err(|e| format!("请求安装包失败: {e}"))?;
 
     if !res.status().is_success() {
@@ -125,13 +203,18 @@ pub async fn download_installer(
 
     let mut file = std::fs::File::create(&path).map_err(|e| format!("创建临时文件失败: {e}"))?;
     let mut downloaded: u64 = 0;
-    let mut stream = res.bytes_stream();
+    let mut buf = [0u8; 64 * 1024];
 
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("读取下载数据流失败: {e}"))?;
-        file.write_all(&chunk)
+    loop {
+        let n = res
+            .read(&mut buf)
+            .map_err(|e| format!("读取下载数据流失败: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        file.write_all(&buf[..n])
             .map_err(|e| format!("写入安装包失败: {e}"))?;
-        downloaded += chunk.len() as u64;
+        downloaded += n as u64;
 
         let percent = if total > 0 {
             (downloaded as f64 / total as f64 * 100.0) as u32
