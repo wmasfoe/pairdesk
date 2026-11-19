@@ -170,6 +170,12 @@ impl PairDeskApp {
             app.prepare_autostart(role, window, cx);
         }
 
+        // 自测：PD_AUTO_CHECK_UPDATE=1 时自动触发一次检查更新，
+        // 用于验证「检查更新」不会崩溃（无需真实鼠标点击）。
+        if std::env::var("PD_AUTO_CHECK_UPDATE").is_ok() {
+            app.check_update(cx);
+        }
+
         // 自测：PD_AUTO_CLICK_PERM=1 时自动触发一次「请求授权」，
         // 用于验证「点击 → 执行 → 显示提示」整条链路（无需真实鼠标点击）。
         if std::env::var("PD_AUTO_CLICK_PERM").is_ok() {
@@ -401,7 +407,9 @@ impl PairDeskApp {
         cx.notify();
 
         // 进度节流：每 5% 才推一次 UI，避免每个 chunk 都 notify 造成重绘风暴
-        let last_percent = std::rc::Rc::new(std::cell::RefCell::new(0u32));
+        // 注意：下载回调跑在独立的 std 线程里（reqwest blocking），
+        // 所以节流计数必须是 Send 的 Arc<Mutex>，不能用 Rc<RefCell>。
+        let last_percent = std::sync::Arc::new(std::sync::Mutex::new(0u32));
         // 跨线程安全的进度中转：下载在 background executor 上跑，
         // 回调里不能直接碰 Context，所以写入共享槽，再由轮询任务读出来更新 UI。
         let progress_slot = std::sync::Arc::new(std::sync::Mutex::new(None::<u32>));
@@ -442,7 +450,7 @@ impl PairDeskApp {
                 let slot = progress_slot.clone();
                 let last = last_percent.clone();
                 move |p| {
-                    let mut last = last.borrow_mut();
+                    let mut last = last.lock().unwrap();
                     if p.percent >= *last + 5 || p.percent == 100 {
                         *last = p.percent;
                         *slot.lock().unwrap() = Some(p.percent);
