@@ -55,10 +55,23 @@ fn open_settings(kind: PermissionKind) {
 ///
 /// 注意：本函数**不返回**（spawn 新进程后 exit）。
 fn restart_app() {
-    if let Ok(exe) = std::env::current_exe() {
-        let _ = std::process::Command::new(exe).spawn();
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => {
+            // 拿不到自身路径 → 不退出，否则应用会凭空消失且用户无法恢复
+            eprintln!("[perm] 重启失败，无法获取自身路径: {e}");
+            return;
+        }
+    };
+
+    match std::process::Command::new(&exe).spawn() {
+        Ok(_) => std::process::exit(0),
+        Err(e) => {
+            // spawn 失败（权限、路径、资源不足）→ 保持当前进程存活，
+            // 让用户还能继续操作，而不是窗口突然消失。
+            eprintln!("[perm] 重启失败，无法启动新进程: {e}");
+        }
     }
-    std::process::exit(0);
 }
 
 // 本模块不做单元测试：所有函数都会产生真实副作用（拉起系统设置、
