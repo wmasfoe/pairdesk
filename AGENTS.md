@@ -53,6 +53,7 @@ cargo build -p pairdesk-ui        # 编译
 
 | 坑 | 正确做法 |
 |---|---|
+| **在 `cx.spawn` 里用 tokio 生态的异步库（reqwest/hyper/tokio::net）** | **App 直接崩溃退出**。GPUI 的 executor 是 `async-task`+`smol`，不是 tokio。改用 `reqwest::blocking` + 独立线程 + `futures-timer` 等待 |
 | 在 `render()` 里 `cx.notify()` 拉帧 | 用 `cx.spawn` + `background_executor().timer()`，否则帧率塌到 0.2fps |
 | 忘了释放旧纹理 | 每帧 `cx.drop_image(old, None)`，否则 GPU 内存无限增长 |
 | `div().on_click()` 编译失败 | 先 `.id("...")` 得到 `Stateful<Div>` |
